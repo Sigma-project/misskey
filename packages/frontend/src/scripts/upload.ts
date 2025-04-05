@@ -26,6 +26,7 @@ export const uploads = ref<Uploading[]>([]);
 
 const mimeTypeMap = {
 	'image/webp': 'webp',
+	'image/jxl': 'jxl',
 	'image/jpeg': 'jpg',
 	'image/png': 'png',
 } as const;
@@ -72,9 +73,9 @@ export function uploadFile(
 			if (config) {
 				try {
 					const resized = await readAndCompressImage(file, config);
-					if (resized.size < file.size || file.type === 'image/webp') {
+					if (resized.size < file.size || file.type === 'image/jxl') {
 						// The compression may not always reduce the file size
-						// (and WebP is not browser safe yet)
+						// (and JPEG XL is not browser safe yet)
 						resizedImage = resized;
 					}
 					if (_DEV_) {
