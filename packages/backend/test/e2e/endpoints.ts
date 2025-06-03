@@ -620,7 +620,7 @@ describe('Endpoints', () => {
 			assert.strictEqual(res.body!.type, 'image/svg+xml');
 		});
 
-		for (const type of ['webp', 'avif']) {
+		for (const type of ['webp', 'avif', 'jxl']) {
 			const mediaType = `image/${type}`;
 
 			const getWebpublicType = async (user: misskey.entities.SignupResponse, fileId: string): Promise<string> => {
@@ -644,7 +644,7 @@ describe('Endpoints', () => {
 				assert.strictEqual(res.body!.type, mediaType);
 
 				const webpublicType = await getWebpublicType(alice, res.body!.id);
-				assert.strictEqual(webpublicType, 'image/webp');
+				assert.strictEqual(webpublicType, 'image/jxl');
 			});
 
 			test(`透明じゃない${type}ファイルを作成できる`, async () => {
@@ -655,7 +655,7 @@ describe('Endpoints', () => {
 				assert.strictEqual(res.body!.type, mediaType);
 
 				const webpublicType = await getWebpublicType(alice, res.body!.id);
-				assert.strictEqual(webpublicType, 'image/webp');
+				assert.strictEqual(webpublicType, 'image/jxl');
 			});
 		}
 	});

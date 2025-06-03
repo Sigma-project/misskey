@@ -106,6 +106,7 @@ import MkButton from '@/components/MkButton.vue';
 import bytes from '@/filters/bytes.js';
 import MkSelect from '@/components/MkSelect.vue';
 import { isWebpSupported } from '@/utility/isWebpSupported.js';
+import { isJxlSupported } from '@/utility/isJxlSupported.js';
 import { uploadFile, UploadAbortedError } from '@/utility/drive.js';
 import * as os from '@/os.js';
 import { ensureSignin } from '@/i.js';
@@ -116,6 +117,7 @@ const COMPRESSION_SUPPORTED_TYPES = [
 	'image/jpeg',
 	'image/png',
 	'image/webp',
+	'image/jxl',
 	'image/svg+xml',
 ];
 
@@ -123,10 +125,12 @@ const CROPPING_SUPPORTED_TYPES = [
 	'image/jpeg',
 	'image/png',
 	'image/webp',
+	'image/jxl',
 ];
 
 const mimeTypeMap = {
 	'image/webp': 'webp',
+	'image/jxl': 'jxl',
 	'image/jpeg': 'jpg',
 	'image/png': 'png',
 } as const;
@@ -337,17 +341,17 @@ async function upload() { // エラーハンドリングなどを考慮してシ
 
 		if (shouldCompress) {
 			const config = {
-				mimeType: isWebpSupported() ? 'image/webp' : 'image/jpeg',
+				mimeType: isJxlSupported() ? 'image/jxl' : 'image/jpeg',
 				maxWidth: compressionSettings.value.maxWidth,
 				maxHeight: compressionSettings.value.maxHeight,
-				quality: isWebpSupported() ? 0.85 : 0.8,
+				quality: isJxlSupported() ? 0.85 : 0.8,
 			};
 
 			try {
 				const result = await readAndCompressImage(item.file, config);
-				if (result.size < item.file.size || item.file.type === 'image/webp') {
+				if (result.size < item.file.size || item.file.type === 'image/jxl') {
 					// The compression may not always reduce the file size
-					// (and WebP is not browser safe yet)
+					// (and JXL is not browser safe yet)
 					item.compressedImage = markRaw(result);
 					item.compressedSize = result.size;
 					item.name = item.file.type !== config.mimeType ? `${item.name}.${mimeTypeMap[config.mimeType]}` : item.name;
