@@ -18,7 +18,7 @@ import { FILE_TYPE_BROWSERSAFE } from '@/const.js';
 import { StatusError } from '@/misc/status-error.js';
 import type Logger from '@/logger.js';
 import { DownloadService } from '@/core/DownloadService.js';
-import { IImageStreamable, ImageProcessingService, jxlDefault } from '@/core/ImageProcessingService.js';
+import { IImageStreamable, ImageProcessingService, jxlDefault, webpDefault } from '@/core/ImageProcessingService.js';
 import { VideoProcessingService } from '@/core/VideoProcessingService.js';
 import { InternalStorageService } from '@/core/InternalStorageService.js';
 import { contentDisposition } from '@/misc/content-disposition.js';
@@ -365,18 +365,26 @@ export class FileServerService {
 						type: file.mime,
 					};
 				} else {
-					const data = (await sharpBmp(file.path, file.mime, { animated: !('static' in request.query) }))
+					const isAnimated = isAnimationConvertibleImage && !('static' in request.query);
+					const data = (await sharpBmp(file.path, file.mime, { animated: isAnimated }))
 						.resize({
 							height: 'emoji' in request.query ? 256 : 640,
 							withoutEnlargement: true,
-						})
-						.jxl(jxlDefault);
+						});
 
-					image = {
-						data,
-						ext: 'jxl',
-						type: 'image/jxl',
-					};
+					if (isAnimated) {
+						image = {
+							data: data.webp(webpDefault),
+							ext: 'webp',
+							type: 'image/webp',
+						};
+					} else {
+						image = {
+							data: data.jxl(jxlDefault),
+							ext: 'jxl',
+							type: 'image/jxl',
+						};
+					}
 				}
 			} else if ('static' in request.query) {
 				image = this.imageProcessingService.convertSharpToJxlStream(await sharpBmp(file.path, file.mime), 498, 422);
