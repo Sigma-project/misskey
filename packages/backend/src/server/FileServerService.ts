@@ -368,7 +368,7 @@ export class FileServerService {
 					const isStatic = 'static' in request.query;
 					const sharpInstance = await sharpBmp(file.path, file.mime, { animated: !isStatic });
 					const metadata = await sharpInstance.metadata();
-					const isAnimated = !isStatic && !!(metadata.pages && metadata.pages > 1);
+					const isAnimated = !isStatic && isMimeImage(file.mime, 'truly-animatable') && !!(metadata.pages && metadata.pages > 1);
 
 					const resized = sharpInstance.resize({
 						height: 'emoji' in request.query ? 256 : 640,
