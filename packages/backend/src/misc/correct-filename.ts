@@ -16,6 +16,22 @@ const targetExtsToSkip = new Set([
 	'.7z',
 ]);
 
+/**
+ * JXL変換時に拡張子を置き換え対象とする画像拡張子
+ */
+const imageExtsForJxlReplace = new Set([
+	'.jpg',
+	'.jpeg',
+	'.png',
+	'.gif',
+	'.webp',
+	'.avif',
+	'.tiff',
+	'.tif',
+	'.bmp',
+	'.ico',
+]);
+
 const extRegExp = /\.[0-9a-zA-Z]+$/i;
 
 /**
@@ -51,6 +67,11 @@ export function correctFilename(filename: string, ext: string | null) {
 		targetExtsToSkip.has(dotExt)
 	) {
 		return filename;
+	}
+
+	// JXLは画像のロスレスコンテナなので拡張子を置き換える
+	if (dotExt === '.jxl' && imageExtsForJxlReplace.has(filenameExt)) {
+		return filename.replace(extRegExp, dotExt);
 	}
 
 	// 拡張子があるが一致していないなどの場合は拡張子を付け足す
