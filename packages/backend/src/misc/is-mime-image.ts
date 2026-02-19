@@ -11,6 +11,7 @@ const dictionary = {
 	'sharp-animation-convertible-image': ['image/jpeg', 'image/tiff', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/jxl', 'image/svg+xml'],
 	'sharp-convertible-image-with-bmp': ['image/jpeg', 'image/tiff', 'image/png', 'image/gif', 'image/apng', 'image/vnd.mozilla.apng', 'image/webp', 'image/avif', 'image/jxl', 'image/svg+xml', 'image/x-icon', 'image/bmp'],
 	'sharp-animation-convertible-image-with-bmp': ['image/jpeg', 'image/tiff', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/jxl', 'image/svg+xml', 'image/x-icon', 'image/bmp'],
+	'truly-animatable': ['image/gif', 'image/webp', 'image/avif', 'image/apng', 'image/vnd.mozilla.apng', 'image/png', 'image/jxl'],
 };
 
 export const isMimeImage = (mime: string, type: keyof typeof dictionary): boolean => dictionary[type].includes(mime);
