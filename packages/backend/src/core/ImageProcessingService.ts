@@ -27,13 +27,10 @@ export type IImageSharp = {
 export type IImageStreamable = IImage | IImageStream | IImageSharp;
 
 export const webpDefault: sharp.WebpOptions = {
-	quality: 77,
-	alphaQuality: 95,
-	lossless: false,
-	nearLossless: false,
+	lossless: true,
 	smartSubsample: true,
 	mixed: true,
-	effort: 2,
+	effort: 6,
 	loop: 0,
 };
 
