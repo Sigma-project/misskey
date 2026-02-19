@@ -308,7 +308,7 @@ export class DriveService {
 		try {
 			img = await sharpBmp(path, type);
 			const metadata = await img.metadata();
-			isAnimated = !!(metadata.pages && metadata.pages > 1);
+			isAnimated = isMimeImage(type, 'truly-animatable') && !!(metadata.pages && metadata.pages > 1);
 
 			satisfyWebpublic = !!(
 				type !== 'image/svg+xml' && // security reason
