@@ -716,6 +716,8 @@ export function useUploader(options: {
 		if (needsCompress) {
 			const mediabunny = await import('mediabunny');
 
+			const codec = await mediabunny.getFirstEncodableVideoCodec(['av1', 'hevc', 'avc']);
+
 			const source = new mediabunny.BlobSource(preprocessedFile);
 
 			const input = new mediabunny.Input({
@@ -732,8 +734,8 @@ export function useUploader(options: {
 				input,
 				output,
 				video: {
-					//width: 320, // Height will be deduced automatically to retain aspect ratio
-					bitrate: item.compressionLevel <= 2 ? mediabunny.QUALITY_VERY_HIGH : item.compressionLevel === 3 ? mediabunny.QUALITY_MEDIUM : mediabunny.QUALITY_VERY_LOW,
+					codec: codec ?? undefined,
+					bitrate: item.compressionLevel === 1 ? mediabunny.QUALITY_VERY_HIGH : item.compressionLevel <= 3 ? mediabunny.QUALITY_MEDIUM : mediabunny.QUALITY_VERY_LOW,
 				},
 				audio: {
 					// Explicitly keep audio (don't discard) and copy it if possible
