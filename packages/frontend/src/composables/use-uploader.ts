@@ -406,7 +406,7 @@ export function useUploader(options: {
 			!item.uploading &&
 			!item.uploaded
 		) {
-			function changeCompressionLevel(level: 0 | 1 | 2 | 3) {
+			function changeCompressionLevel(level: 0 | 1 | 2 | 3 | 4) {
 				item.compressionLevel = level;
 				preprocess(item).then(() => {
 					triggerRef(items);
@@ -421,11 +421,13 @@ export function useUploader(options: {
 					if (item.compressionLevel === 0 || item.compressionLevel == null) {
 						text += `: ${i18n.ts.none}`;
 					} else if (item.compressionLevel === 1) {
-						text += `: ${i18n.ts.low}`;
+						text += `: ${i18n.ts.highest}`;
 					} else if (item.compressionLevel === 2) {
-						text += `: ${i18n.ts.medium}`;
-					} else if (item.compressionLevel === 3) {
 						text += `: ${i18n.ts.high}`;
+					} else if (item.compressionLevel === 3) {
+						text += `: ${i18n.ts.medium}`;
+					} else if (item.compressionLevel === 4) {
+						text += `: ${i18n.ts.low}`;
 					}
 
 					return text;
@@ -440,19 +442,24 @@ export function useUploader(options: {
 					type: 'divider',
 				}, {
 					type: 'radioOption',
-					text: i18n.ts.low,
+					text: i18n.ts.highest,
 					active: computed(() => item.compressionLevel === 1),
 					action: () => changeCompressionLevel(1),
 				}, {
 					type: 'radioOption',
-					text: i18n.ts.medium,
+					text: i18n.ts.high,
 					active: computed(() => item.compressionLevel === 2),
 					action: () => changeCompressionLevel(2),
 				}, {
 					type: 'radioOption',
-					text: i18n.ts.high,
+					text: i18n.ts.medium,
 					active: computed(() => item.compressionLevel === 3),
 					action: () => changeCompressionLevel(3),
+				}, {
+					type: 'radioOption',
+					text: i18n.ts.low,
+					active: computed(() => item.compressionLevel === 4),
+					action: () => changeCompressionLevel(4),
 				}],
 			});
 		}
