@@ -735,7 +735,7 @@ export function useUploader(options: {
 				output,
 				video: {
 					codec: codec ?? undefined,
-					bitrate: item.compressionLevel === 1 ? mediabunny.QUALITY_VERY_HIGH : item.compressionLevel <= 3 ? mediabunny.QUALITY_MEDIUM : mediabunny.QUALITY_VERY_LOW,
+					bitrate: item.compressionLevel === 1 ? Object.assign(new mediabunny.Quality(), { _factor: 8 }) : item.compressionLevel <= 3 ? mediabunny.QUALITY_MEDIUM : mediabunny.QUALITY_VERY_LOW,
 				},
 				audio: {
 					// Explicitly keep audio (don't discard) and copy it if possible
