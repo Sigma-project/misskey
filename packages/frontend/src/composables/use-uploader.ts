@@ -55,6 +55,7 @@ const VIDEO_PREPROCESS_NEEDED_TYPES = [
 
 const mimeTypeMap = {
 	'image/jxl': 'jxl',
+	'image/avif': 'avif',
 	'image/jpeg': 'jpg',
 	'image/png': 'png',
 } as const;
@@ -670,10 +671,10 @@ export function useUploader(options: {
 
 		if (needsCompress) {
 			const config = {
-				mimeType: isJxlSupported() ? 'image/jxl' : 'image/jpeg',
+				mimeType: isJxlSupported() ? 'image/jxl' as const : 'image/avif' as const,
 				maxWidth: compressionSettings.maxWidth,
 				maxHeight: compressionSettings.maxHeight,
-				quality: isJxlSupported() ? 1.0 : 0.8,
+				quality: 1.0,
 			};
 
 			try {
