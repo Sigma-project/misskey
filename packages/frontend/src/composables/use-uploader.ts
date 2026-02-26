@@ -711,12 +711,11 @@ export function useUploader(options: {
 	async function preprocessForVideo(item: UploaderItem): Promise<void> {
 		let preprocessedFile: Blob | File = item.file;
 
-		const needsCompress = item.compressionLevel !== 0 && VIDEO_COMPRESSION_SUPPORTED_TYPES.includes(preprocessedFile.type);
+		const needsProcess = VIDEO_COMPRESSION_SUPPORTED_TYPES.includes(preprocessedFile.type);
+		const needsCompress = item.compressionLevel !== 0 && needsProcess;
 
-		if (needsCompress) {
+		if (needsProcess) {
 			const mediabunny = await import('mediabunny');
-
-			const codec = await mediabunny.getFirstEncodableVideoCodec(['av1', 'hevc', 'avc']);
 
 			const source = new mediabunny.BlobSource(preprocessedFile);
 
@@ -730,13 +729,15 @@ export function useUploader(options: {
 				format: new mediabunny.Mp4OutputFormat(),
 			});
 
+			const videoOptions = needsCompress ? {
+				codec: (await mediabunny.getFirstEncodableVideoCodec(['av1', 'hevc', 'avc'])) ?? undefined,
+				bitrate: item.compressionLevel === 1 ? Object.assign(new mediabunny.Quality(), { _factor: 8 }) : item.compressionLevel === 2 ? mediabunny.QUALITY_VERY_HIGH : item.compressionLevel === 3 ? mediabunny.QUALITY_MEDIUM : mediabunny.QUALITY_VERY_LOW,
+			} : {};
+
 			const currentConversion = await mediabunny.Conversion.init({
 				input,
 				output,
-				video: {
-					codec: codec ?? undefined,
-					bitrate: item.compressionLevel === 1 ? Object.assign(new mediabunny.Quality(), { _factor: 8 }) : item.compressionLevel === 2 ? mediabunny.QUALITY_VERY_HIGH : item.compressionLevel === 3 ? mediabunny.QUALITY_MEDIUM : mediabunny.QUALITY_VERY_LOW,
-				},
+				video: videoOptions,
 				audio: {
 					// Explicitly keep audio (don't discard) and copy it if possible
 					// without re-encoding to avoid WebCodecs limitations on iOS Safari
