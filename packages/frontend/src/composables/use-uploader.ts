@@ -742,6 +742,10 @@ export function useUploader(options: {
 					// without re-encoding to avoid WebCodecs limitations on iOS Safari
 					discard: false,
 				},
+				tags: (inputTags) => ({
+					title: inputTags.title,
+					description: inputTags.description,
+				}),
 			});
 
 			currentConversion.onProgress = newProgress => item.preprocessProgress = newProgress;
