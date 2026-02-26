@@ -72,7 +72,7 @@ export type UploaderItem = {
 	uploaded: Misskey.entities.DriveFile | null;
 	uploadFailed: boolean;
 	aborted: boolean;
-	compressionLevel: 0 | 1 | 2 | 3;
+	compressionLevel: 0 | 1 | 2 | 3 | 4;
 	compressedSize?: number | null;
 	preprocessedFile?: Blob | null;
 	file: File;
