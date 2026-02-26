@@ -84,18 +84,23 @@ export type UploaderItem = {
 	abortPreprocess?: (() => void) | null;
 };
 
-function getCompressionSettings(level: 0 | 1 | 2 | 3) {
+function getCompressionSettings(level: 0 | 1 | 2 | 3 | 4) {
 	if (level === 1) {
+		return {
+			maxWidth: Infinity,
+			maxHeight: Infinity,
+		};
+	} else if (level === 2) {
 		return {
 			maxWidth: 2000,
 			maxHeight: 2000,
 		};
-	} else if (level === 2) {
+	} else if (level === 3) {
 		return {
 			maxWidth: 2000 * 0.75, // =1500
 			maxHeight: 2000 * 0.75, // =1500
 		};
-	} else if (level === 3) {
+	} else if (level === 4) {
 		return {
 			maxWidth: 2000 * 0.75 * 0.75, // =1125
 			maxHeight: 2000 * 0.75 * 0.75, // =1125
