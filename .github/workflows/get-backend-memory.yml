@@ -48,14 +48,15 @@ jobs:
       uses: pnpm/action-setup@v4.2.0
     - name: Setup mise
       uses: jdx/mise-action@v2
+    - run: pnpm i --frozen-lockfile
+    - name: Check pnpm-lock.yaml
+      run: git diff --exit-code pnpm-lock.yaml
     - name: Copy Configure
       run: cp .github/misskey/test.yml .config/default.yml
     - name: Compile Configure
       run: pnpm compile-config
     - name: Build
-      run: mise run build
-    - name: Check pnpm-lock.yaml
-      run: git diff --exit-code pnpm-lock.yaml
+      run: pnpm build
     - name: Run migrations
       run: pnpm --filter backend migrate
     - name: Measure memory usage
