@@ -42,6 +42,8 @@ jobs:
         submodules: true
     - name: Setup pnpm
       uses: pnpm/action-setup@v4.2.0
+    - name: Setup libvips
+      uses: ./.github/actions/setup-libvips
     - name: Setup mise
       uses: jdx/mise-action@v2
     - run: pnpm i --frozen-lockfile
@@ -73,6 +75,8 @@ jobs:
         submodules: true
     - name: Setup pnpm
       uses: pnpm/action-setup@v4.2.0
+    - name: Setup libvips
+      uses: ./.github/actions/setup-libvips
     - name: Setup mise
       uses: jdx/mise-action@v2
     - run: pnpm i --frozen-lockfile
@@ -102,6 +106,8 @@ jobs:
         submodules: true
     - name: Setup pnpm
       uses: pnpm/action-setup@v4.2.0
+    - name: Setup libvips
+      uses: ./.github/actions/setup-libvips
     - name: Setup mise
       uses: jdx/mise-action@v2
     - run: pnpm i --frozen-lockfile

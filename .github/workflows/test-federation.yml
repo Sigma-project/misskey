@@ -62,6 +62,8 @@ jobs:
               exit 1
             fi
           done
+      - name: Setup libvips
+        uses: ./.github/actions/setup-libvips
       - name: Setup mise
         uses: jdx/mise-action@v2
       - name: Build Misskey
