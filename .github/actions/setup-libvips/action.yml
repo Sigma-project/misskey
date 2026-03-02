@@ -57,7 +57,7 @@ runs:
         curl -sL https://github.com/libvips/libvips/releases/download/v${{ inputs.vips-version }}/vips-${{ inputs.vips-version }}.tar.xz -o vips.tar.xz
         tar xf vips.tar.xz
         cd vips-${{ inputs.vips-version }}
-        meson setup build --prefix=/usr/local --libdir=lib --buildtype=release -Dintrospection=disabled -Djxl=enabled
+        meson setup build --prefix=/usr/local --libdir=lib --buildtype=release -Dintrospection=disabled -Djpeg-xl=enabled
         cd build
         meson compile
         DESTDIR=/tmp/libvips-destdir meson install
