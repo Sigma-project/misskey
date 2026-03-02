@@ -15,7 +15,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: /tmp/libvips-destdir
-        key: libvips-v2-${{ inputs.vips-version }}-${{ runner.os }}-${{ runner.arch }}
+        key: libvips-v3-${{ inputs.vips-version }}-${{ runner.os }}-${{ runner.arch }}
 
     - name: Install libvips dependencies
       shell: bash
@@ -57,7 +57,7 @@ runs:
         curl -sL https://github.com/libvips/libvips/releases/download/v${{ inputs.vips-version }}/vips-${{ inputs.vips-version }}.tar.xz -o vips.tar.xz
         tar xf vips.tar.xz
         cd vips-${{ inputs.vips-version }}
-        meson setup build --prefix=/usr/local --libdir=lib --buildtype=release -Dintrospection=disabled
+        meson setup build --prefix=/usr/local --libdir=lib --buildtype=release -Dintrospection=disabled -Djxl=enabled
         cd build
         meson compile
         DESTDIR=/tmp/libvips-destdir meson install
