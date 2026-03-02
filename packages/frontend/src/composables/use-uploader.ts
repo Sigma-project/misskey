@@ -55,14 +55,6 @@ const VIDEO_PREPROCESS_NEEDED_TYPES = [
 	...VIDEO_COMPRESSION_SUPPORTED_TYPES,
 ];
 
-const mimeTypeMap = {
-	'image/jxl': 'jxl',
-	'image/avif': 'avif',
-	'image/webp': 'webp',
-	'image/jpeg': 'jpg',
-	'image/png': 'png',
-} as const;
-
 export type UploaderItem = {
 	id: string;
 	name: string;
