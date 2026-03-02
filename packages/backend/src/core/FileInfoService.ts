@@ -13,6 +13,7 @@ import * as fileType from 'file-type';
 import FFmpeg from 'fluent-ffmpeg';
 import isSvg from 'is-svg';
 import probeImageSize from 'probe-image-size';
+import { imageSizeFromFile } from 'image-size/fromFile';
 import { sharpBmp } from '@misskey-dev/sharp-read-bmp';
 import * as blurhash from 'blurhash';
 import { createTempDir } from '@/misc/create-temp.js';
@@ -140,24 +141,24 @@ export class FileInfoService {
 			}
 		}
 
-		// JXLはprobe-image-sizeが未対応のためsharpで次元を取得（best-effort）
+		// JXLはprobe-image-sizeが未対応のためimage-sizeで次元を取得
 		if (type.mime === 'image/jxl') {
 			try {
-				const metadata = await (await sharpBmp(path, type.mime)).metadata();
-				if (metadata.width && metadata.height) {
-					if (metadata.width > 16383 || metadata.height > 16383) {
+				const result = await imageSizeFromFile(path);
+				if (result.width && result.height) {
+					if (result.width > 16383 || result.height > 16383) {
 						warnings.push('image dimensions exceeds limits');
 						type = TYPE_OCTET_STREAM;
 					} else {
-						width = metadata.width;
-						height = metadata.height;
-						orientation = metadata.orientation;
+						width = result.width;
+						height = result.height;
+						orientation = result.orientation;
 					}
 				} else {
-					warnings.push('cannot detect JXL image dimensions (sharp)');
+					warnings.push('cannot detect JXL image dimensions (image-size)');
 				}
 			} catch (e) {
-				warnings.push(`sharp metadata failed for JXL: ${e}`);
+				warnings.push(`image-size failed for JXL: ${e}`);
 			}
 		}
 
