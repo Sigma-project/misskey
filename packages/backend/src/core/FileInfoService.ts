@@ -109,7 +109,7 @@ export class FileInfoService {
 			'image/jpeg',
 			'image/webp',
 			'image/avif',
-			'image/jxl',
+			// JXLはprobe-image-sizeが未対応のため除外（sharpで別途取得）
 			'image/apng',
 			'image/bmp',
 			'image/tiff',
@@ -137,6 +137,27 @@ export class FileInfoService {
 				}
 			} else {
 				warnings.push(`unsupported unit type: ${imageSize.wUnits}`);
+			}
+		}
+
+		// JXLはprobe-image-sizeが未対応のためsharpで次元を取得（best-effort）
+		if (type.mime === 'image/jxl') {
+			try {
+				const metadata = await (await sharpBmp(path, type.mime)).metadata();
+				if (metadata.width && metadata.height) {
+					if (metadata.width > 16383 || metadata.height > 16383) {
+						warnings.push('image dimensions exceeds limits');
+						type = TYPE_OCTET_STREAM;
+					} else {
+						width = metadata.width;
+						height = metadata.height;
+						orientation = metadata.orientation;
+					}
+				} else {
+					warnings.push('cannot detect JXL image dimensions (sharp)');
+				}
+			} catch (e) {
+				warnings.push(`sharp metadata failed for JXL: ${e}`);
 			}
 		}
 
