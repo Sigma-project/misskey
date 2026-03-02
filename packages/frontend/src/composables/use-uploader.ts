@@ -731,7 +731,8 @@ export function useUploader(options: {
 
 			let bitrate;
 			if (item.compressionLevel === 1) {
-				bitrate = Object.assign(new mediabunny.Quality(), { _factor: 8 });
+				// @ts-expect-error Quality constructor accepts a factor parameter internally
+				bitrate = new mediabunny.Quality(8);
 			} else if (item.compressionLevel === 2) {
 				bitrate = mediabunny.QUALITY_VERY_HIGH;
 			} else if (item.compressionLevel === 3) {
