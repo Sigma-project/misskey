@@ -16,7 +16,6 @@ import { i18n } from '@/i18n.js';
 import { prefer } from '@/preferences.js';
 import { isJxlSupported } from '@/utility/isJxlSupported.js';
 import { isAvifSupported } from '@/utility/isAvifSupported.js';
-import { isWebpSupported } from '@/utility/isWebpSupported.js';
 import { uploadFile, UploadAbortedError } from '@/utility/drive.js';
 import * as os from '@/os.js';
 import { ensureSignin } from '@/i.js';
