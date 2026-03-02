@@ -692,7 +692,7 @@ export function useUploader(options: {
 					// (and JXL is not browser safe yet)
 					preprocessedFile = result;
 					item.compressedSize = result.size;
-					item.uploadName = preprocessedFile.type !== config.mimeType ? `${item.name}.${mimeTypeMap[config.mimeType]}` : item.name;
+					item.uploadName = item.name;
 				}
 			} catch (err) {
 				console.error('Failed to resize image', err);
