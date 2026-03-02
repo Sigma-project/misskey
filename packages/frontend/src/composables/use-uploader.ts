@@ -712,10 +712,9 @@ export function useUploader(options: {
 	async function preprocessForVideo(item: UploaderItem): Promise<void> {
 		let preprocessedFile: Blob | File = item.file;
 
-		const needsProcess = VIDEO_COMPRESSION_SUPPORTED_TYPES.includes(preprocessedFile.type);
-		const needsCompress = item.compressionLevel !== 0 && needsProcess;
+		const needsCompress = item.compressionLevel !== 0 && VIDEO_COMPRESSION_SUPPORTED_TYPES.includes(preprocessedFile.type);
 
-		if (needsProcess) {
+		if (needsCompress) {
 			const mediabunny = await import('mediabunny');
 
 			const source = new mediabunny.BlobSource(preprocessedFile);
@@ -730,24 +729,21 @@ export function useUploader(options: {
 				format: new mediabunny.Mp4OutputFormat(),
 			});
 
-			let videoOptions = {};
-			if (needsCompress) {
-				let bitrate;
-				if (item.compressionLevel === 1) {
-					bitrate = Object.assign(new mediabunny.Quality(), { _factor: 8 });
-				} else if (item.compressionLevel === 2) {
-					bitrate = mediabunny.QUALITY_VERY_HIGH;
-				} else if (item.compressionLevel === 3) {
-					bitrate = mediabunny.QUALITY_MEDIUM;
-				} else {
-					bitrate = mediabunny.QUALITY_VERY_LOW;
-				}
-
-				videoOptions = {
-					codec: (await mediabunny.getFirstEncodableVideoCodec(['av1', 'hevc', 'avc'])) ?? undefined,
-					bitrate,
-				};
+			let bitrate;
+			if (item.compressionLevel === 1) {
+				bitrate = Object.assign(new mediabunny.Quality(), { _factor: 8 });
+			} else if (item.compressionLevel === 2) {
+				bitrate = mediabunny.QUALITY_VERY_HIGH;
+			} else if (item.compressionLevel === 3) {
+				bitrate = mediabunny.QUALITY_MEDIUM;
+			} else {
+				bitrate = mediabunny.QUALITY_VERY_LOW;
 			}
+
+			const videoOptions = {
+				codec: (await mediabunny.getFirstEncodableVideoCodec(['av1', 'hevc', 'avc'])) ?? undefined,
+				bitrate,
+			};
 
 			const currentConversion = await mediabunny.Conversion.init({
 				input,
