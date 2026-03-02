@@ -39,14 +39,14 @@ jobs:
         sudo apt-get install -y \
           libglib2.0-dev libexpat1-dev libjpeg-turbo8-dev libpng-dev libwebp-dev \
           libtiff-dev libexif-dev liblcms2-dev libcgif-dev libjxl-dev libheif-dev \
-          libfftw3-dev liborc-dev libspng-dev libarchive-dev libhwy-dev
+          libfftw3-dev liborc-dev libspng-dev libarchive-dev libhwy-dev librsvg2-dev
     - name: Restore libvips cache
       id: cache-libvips
       if: hashFiles('mise.toml') != ''
       uses: actions/cache@v4
       with:
         path: /tmp/libvips-destdir
-        key: libvips-v3-8.18.0-${{ runner.os }}-${{ runner.arch }}
+        key: libvips-v4-8.18.0-${{ runner.os }}-${{ runner.arch }}
     - name: Build libvips from source
       if: hashFiles('mise.toml') != '' && steps.cache-libvips.outputs.cache-hit != 'true'
       run: |

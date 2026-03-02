@@ -15,7 +15,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: /tmp/libvips-destdir
-        key: libvips-v3-${{ inputs.vips-version }}-${{ runner.os }}-${{ runner.arch }}
+        key: libvips-v4-${{ inputs.vips-version }}-${{ runner.os }}-${{ runner.arch }}
 
     - name: Install libvips dependencies
       shell: bash
@@ -37,7 +37,8 @@ runs:
           liborc-dev \
           libspng-dev \
           libarchive-dev \
-          libhwy-dev
+          libhwy-dev \
+          librsvg2-dev
 
     - name: Install libvips build tools
       if: steps.cache-libvips.outputs.cache-hit != 'true'
