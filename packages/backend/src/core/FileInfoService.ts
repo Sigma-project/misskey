@@ -156,9 +156,11 @@ export class FileInfoService {
 					}
 				} else {
 					warnings.push('cannot detect JXL image dimensions (image-size)');
+					type = TYPE_OCTET_STREAM;
 				}
 			} catch (e) {
 				warnings.push(`image-size failed for JXL: ${e}`);
+				type = TYPE_OCTET_STREAM;
 			}
 		}
 
