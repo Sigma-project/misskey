@@ -28,6 +28,7 @@ const THUMBNAIL_SUPPORTED_TYPES = [
 	'image/jpeg',
 	'image/png',
 	'image/webp',
+	'image/avif',
 	'image/jxl',
 	'image/svg+xml',
 	'image/gif',
@@ -55,6 +56,7 @@ const VIDEO_PREPROCESS_NEEDED_TYPES = [
 
 const mimeTypeMap = {
 	'image/jxl': 'jxl',
+	'image/avif': 'avif',
 	'image/jpeg': 'jpg',
 	'image/png': 'png',
 } as const;
@@ -71,7 +73,7 @@ export type UploaderItem = {
 	uploaded: Misskey.entities.DriveFile | null;
 	uploadFailed: boolean;
 	aborted: boolean;
-	compressionLevel: 0 | 1 | 2 | 3;
+	compressionLevel: 0 | 1 | 2 | 3 | 4;
 	compressedSize?: number | null;
 	preprocessedFile?: Blob | null;
 	file: File;
@@ -84,18 +86,23 @@ export type UploaderItem = {
 	abortPreprocess?: (() => void) | null;
 };
 
-function getCompressionSettings(level: 0 | 1 | 2 | 3) {
+function getCompressionSettings(level: 0 | 1 | 2 | 3 | 4) {
 	if (level === 1) {
+		return {
+			maxWidth: Infinity,
+			maxHeight: Infinity,
+		};
+	} else if (level === 2) {
 		return {
 			maxWidth: 2000,
 			maxHeight: 2000,
 		};
-	} else if (level === 2) {
+	} else if (level === 3) {
 		return {
 			maxWidth: 2000 * 0.75, // =1500
 			maxHeight: 2000 * 0.75, // =1500
 		};
-	} else if (level === 3) {
+	} else if (level === 4) {
 		return {
 			maxWidth: 2000 * 0.75 * 0.75, // =1125
 			maxHeight: 2000 * 0.75 * 0.75, // =1125
@@ -400,7 +407,7 @@ export function useUploader(options: {
 			!item.uploading &&
 			!item.uploaded
 		) {
-			function changeCompressionLevel(level: 0 | 1 | 2 | 3) {
+			function changeCompressionLevel(level: 0 | 1 | 2 | 3 | 4) {
 				item.compressionLevel = level;
 				preprocess(item).then(() => {
 					triggerRef(items);
@@ -415,11 +422,13 @@ export function useUploader(options: {
 					if (item.compressionLevel === 0 || item.compressionLevel == null) {
 						text += `: ${i18n.ts.none}`;
 					} else if (item.compressionLevel === 1) {
-						text += `: ${i18n.ts.low}`;
+						text += `: ${i18n.ts.highest}`;
 					} else if (item.compressionLevel === 2) {
-						text += `: ${i18n.ts.medium}`;
-					} else if (item.compressionLevel === 3) {
 						text += `: ${i18n.ts.high}`;
+					} else if (item.compressionLevel === 3) {
+						text += `: ${i18n.ts.medium}`;
+					} else if (item.compressionLevel === 4) {
+						text += `: ${i18n.ts.low}`;
 					}
 
 					return text;
@@ -434,19 +443,24 @@ export function useUploader(options: {
 					type: 'divider',
 				}, {
 					type: 'radioOption',
-					text: i18n.ts.low,
+					text: i18n.ts.highest,
 					active: computed(() => item.compressionLevel === 1),
 					action: () => changeCompressionLevel(1),
 				}, {
 					type: 'radioOption',
-					text: i18n.ts.medium,
+					text: i18n.ts.high,
 					active: computed(() => item.compressionLevel === 2),
 					action: () => changeCompressionLevel(2),
 				}, {
 					type: 'radioOption',
-					text: i18n.ts.high,
+					text: i18n.ts.medium,
 					active: computed(() => item.compressionLevel === 3),
 					action: () => changeCompressionLevel(3),
+				}, {
+					type: 'radioOption',
+					text: i18n.ts.low,
+					active: computed(() => item.compressionLevel === 4),
+					action: () => changeCompressionLevel(4),
 				}],
 			});
 		}
@@ -665,10 +679,10 @@ export function useUploader(options: {
 
 		if (needsCompress) {
 			const config = {
-				mimeType: isJxlSupported() ? 'image/jxl' : 'image/jpeg',
+				mimeType: isJxlSupported() ? 'image/jxl' as const : 'image/avif' as const,
 				maxWidth: compressionSettings.maxWidth,
 				maxHeight: compressionSettings.maxHeight,
-				quality: isJxlSupported() ? 1.0 : 0.8,
+				quality: 1.0,
 			};
 
 			try {
@@ -715,18 +729,36 @@ export function useUploader(options: {
 				format: new mediabunny.Mp4OutputFormat(),
 			});
 
+			let bitrate;
+			if (item.compressionLevel === 1) {
+				// @ts-expect-error Quality constructor accepts a factor parameter internally
+				bitrate = new mediabunny.Quality(8);
+			} else if (item.compressionLevel === 2) {
+				bitrate = mediabunny.QUALITY_VERY_HIGH;
+			} else if (item.compressionLevel === 3) {
+				bitrate = mediabunny.QUALITY_MEDIUM;
+			} else {
+				bitrate = mediabunny.QUALITY_VERY_LOW;
+			}
+
+			const videoOptions = {
+				codec: (await mediabunny.getFirstEncodableVideoCodec(['av1', 'hevc', 'avc'])) ?? undefined,
+				bitrate,
+			};
+
 			const currentConversion = await mediabunny.Conversion.init({
 				input,
 				output,
-				video: {
-					//width: 320, // Height will be deduced automatically to retain aspect ratio
-					bitrate: item.compressionLevel === 1 ? mediabunny.QUALITY_VERY_HIGH : item.compressionLevel === 2 ? mediabunny.QUALITY_MEDIUM : mediabunny.QUALITY_VERY_LOW,
-				},
+				video: videoOptions,
 				audio: {
 					// Explicitly keep audio (don't discard) and copy it if possible
 					// without re-encoding to avoid WebCodecs limitations on iOS Safari
 					discard: false,
 				},
+				tags: (inputTags) => ({
+					title: inputTags.title,
+					description: inputTags.description,
+				}),
 			});
 
 			currentConversion.onProgress = newProgress => item.preprocessProgress = newProgress;

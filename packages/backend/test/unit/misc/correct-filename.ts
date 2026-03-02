@@ -24,6 +24,15 @@ describe(correctFilename, () => {
 	it('jpg to .jxl', () => {
 		expect(correctFilename('test.jpg', '.jxl')).toBe('test.jxl');
 	});
+	it('jpg to avif', () => {
+		expect(correctFilename('test.jpg', 'avif')).toBe('test.avif');
+	});
+	it('jpg to .avif', () => {
+		expect(correctFilename('test.jpg', '.avif')).toBe('test.avif');
+	});
+	it('png to avif', () => {
+		expect(correctFilename('test.png', 'avif')).toBe('test.avif');
+	});
 	it('jpeg to jpg', () => {
 		expect(correctFilename('test.jpeg', 'jpg')).toBe('test.jpeg');
 	});

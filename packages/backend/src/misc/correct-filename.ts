@@ -16,6 +16,15 @@ const targetExtsToSkip = new Set([
 	'.7z',
 ]);
 
+/**
+ * 画像形式間の変換時に拡張子を置換すべき組み合わせ
+ * key: 変換先の拡張子, value: 変換元の拡張子のSet
+ */
+const replaceableImageExts: Record<string, Set<string>> = {
+	'.jxl': new Set(['.jpg', '.jpeg', '.png', '.webp', '.avif', '.gif', '.bmp', '.tif', '.tiff']),
+	'.avif': new Set(['.jpg', '.jpeg', '.png', '.webp', '.jxl', '.gif', '.bmp', '.tif', '.tiff']),
+};
+
 const extRegExp = /\.[0-9a-zA-Z]+$/i;
 
 /**
@@ -51,6 +60,11 @@ export function correctFilename(filename: string, ext: string | null) {
 		targetExtsToSkip.has(dotExt)
 	) {
 		return filename;
+	}
+
+	// 画像形式間の変換時は拡張子を置換する
+	if (replaceableImageExts[dotExt]?.has(filenameExt)) {
+		return filename.replace(extRegExp, dotExt);
 	}
 
 	// 拡張子があるが一致していないなどの場合は拡張子を付け足す

@@ -312,6 +312,7 @@ export class DriveService {
 
 			satisfyWebpublic = !!(
 				type !== 'image/svg+xml' && // security reason
+				!['image/jpeg', 'image/webp', 'image/avif'].includes(type) && // needs JXL conversion
 			!(metadata.exif ?? metadata.iptc ?? metadata.xmp ?? metadata.tifftagPhotoshop) &&
 				metadata.width && metadata.width <= 11648 &&
 				metadata.height && metadata.height <= 11648

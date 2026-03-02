@@ -26,11 +26,6 @@ jobs:
   test:
     name: Federation test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version-file:
-          - .node-version
-          - .github/min.node-version
     steps:
       - uses: actions/checkout@v6
         with:
@@ -67,18 +62,15 @@ jobs:
               exit 1
             fi
           done
-      - name: Use Node.js
-        uses: actions/setup-node@v6.1.0
-        with:
-          node-version-file: ${{ matrix.node-version-file }}
-          cache: 'pnpm'
+      - name: Setup libvips
+        uses: ./.github/actions/setup-libvips
+      - name: Setup mise
+        uses: jdx/mise-action@v2
       - name: Build Misskey
-        run: |
-          pnpm i --frozen-lockfile
-          pnpm build
+        run: mise run build
       - name: Setup
         run: |
-          echo "NODE_VERSION=$(cat ${{ matrix.node-version-file }})" >> $GITHUB_ENV
+          echo "NODE_VERSION=$(cat .node-version)" >> $GITHUB_ENV
           cd packages/backend/test-federation
           bash ./setup.sh
           sudo chmod 644 ./certificates/*.test.key

@@ -1,0 +1,21 @@
+[tools]
+node = "22.15.0"
+
+[env]
+SHARP_FORCE_GLOBAL_LIBVIPS = "1"
+npm_config_build_from_source = "true"
+
+[tasks.build]
+description = "Install dependencies and build"
+run = ["pnpm i --frozen-lockfile", "pnpm build"]
+
+[tasks.update]
+description = "Pull, install, clean, build, and migrate for production"
+env = { NODE_ENV = "production" }
+run = [
+  "git pull",
+  "pnpm install --frozen-lockfile",
+  "pnpm run clean",
+  "pnpm run build",
+  "pnpm run migrate",
+]
