@@ -123,6 +123,7 @@
 		"hpagent": "1.2.0",
 		"http-link-header": "1.1.3",
 		"i18n": "workspace:*",
+		"image-size": "2.0.2",
 		"ioredis": "5.8.2",
 		"ip-cidr": "4.0.2",
 		"ipaddr.js": "2.3.0",
