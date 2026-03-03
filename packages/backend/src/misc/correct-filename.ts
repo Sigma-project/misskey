@@ -23,6 +23,7 @@ const targetExtsToSkip = new Set([
 const replaceableImageExts: Record<string, Set<string>> = {
 	'.jxl': new Set(['.jpg', '.jpeg', '.png', '.webp', '.avif', '.gif', '.bmp', '.tif', '.tiff']),
 	'.avif': new Set(['.jpg', '.jpeg', '.png', '.webp', '.jxl', '.gif', '.bmp', '.tif', '.tiff']),
+	'.webp': new Set(['.jpg', '.jpeg', '.png', '.avif', '.jxl', '.gif', '.bmp', '.tif', '.tiff']),
 };
 
 const extRegExp = /\.[0-9a-zA-Z]+$/i;

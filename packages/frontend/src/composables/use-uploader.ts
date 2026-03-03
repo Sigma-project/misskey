@@ -15,6 +15,7 @@ import { genId } from '@/utility/id.js';
 import { i18n } from '@/i18n.js';
 import { prefer } from '@/preferences.js';
 import { isJxlSupported } from '@/utility/isJxlSupported.js';
+import { isAvifSupported } from '@/utility/isAvifSupported.js';
 import { uploadFile, UploadAbortedError } from '@/utility/drive.js';
 import * as os from '@/os.js';
 import { ensureSignin } from '@/i.js';
@@ -53,13 +54,6 @@ const IMAGE_PREPROCESS_NEEDED_TYPES = [
 const VIDEO_PREPROCESS_NEEDED_TYPES = [
 	...VIDEO_COMPRESSION_SUPPORTED_TYPES,
 ];
-
-const mimeTypeMap = {
-	'image/jxl': 'jxl',
-	'image/avif': 'avif',
-	'image/jpeg': 'jpg',
-	'image/png': 'png',
-} as const;
 
 export type UploaderItem = {
 	id: string;
@@ -679,7 +673,7 @@ export function useUploader(options: {
 
 		if (needsCompress) {
 			const config = {
-				mimeType: isJxlSupported() ? 'image/jxl' as const : 'image/avif' as const,
+				mimeType: isJxlSupported() ? 'image/jxl' as const : isAvifSupported() ? 'image/avif' as const : 'image/webp' as const,
 				maxWidth: compressionSettings.maxWidth,
 				maxHeight: compressionSettings.maxHeight,
 				quality: 1.0,
@@ -692,7 +686,7 @@ export function useUploader(options: {
 					// (and JXL is not browser safe yet)
 					preprocessedFile = result;
 					item.compressedSize = result.size;
-					item.uploadName = preprocessedFile.type !== config.mimeType ? `${item.name}.${mimeTypeMap[config.mimeType]}` : item.name;
+					item.uploadName = item.name;
 				}
 			} catch (err) {
 				console.error('Failed to resize image', err);
