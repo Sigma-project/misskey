@@ -13,10 +13,10 @@ describe(correctFilename, () => {
 		expect(correctFilename('test', 'jpg')).toBe('test.jpg');
 	});
 	it('jpg to webp', () => {
-		expect(correctFilename('test.jpg', 'webp')).toBe('test.jpg.webp');
+		expect(correctFilename('test.jpg', 'webp')).toBe('test.webp');
 	});
 	it('jpg to .webp', () => {
-		expect(correctFilename('test.jpg', '.webp')).toBe('test.jpg.webp');
+		expect(correctFilename('test.jpg', '.webp')).toBe('test.webp');
 	});
 	it('jpg to jxl', () => {
 		expect(correctFilename('test.jpg', 'jxl')).toBe('test.jxl');
