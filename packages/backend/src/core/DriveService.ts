@@ -25,6 +25,7 @@ import { GlobalEventService } from '@/core/GlobalEventService.js';
 import { VideoProcessingService } from '@/core/VideoProcessingService.js';
 import { ImageProcessingService } from '@/core/ImageProcessingService.js';
 import type { IImage } from '@/core/ImageProcessingService.js';
+import { WasmVipsService } from '@/core/WasmVipsService.js';
 import { QueueService } from '@/core/QueueService.js';
 import type { MiDriveFolder } from '@/models/DriveFolder.js';
 import { createTemp } from '@/misc/create-temp.js';
@@ -121,6 +122,7 @@ export class DriveService {
 		private internalStorageService: InternalStorageService,
 		private s3Service: S3Service,
 		private imageProcessingService: ImageProcessingService,
+		private wasmVipsService: WasmVipsService,
 		private videoProcessingService: VideoProcessingService,
 		private globalEventService: GlobalEventService,
 		private queueService: QueueService,
@@ -354,7 +356,8 @@ export class DriveService {
 
 		try {
 			if (isAnimated) {
-				thumbnail = await this.imageProcessingService.convertSharpToJxl(sharp(path, { animated: true }), 374, 317, { quality: 100, lossless: true, effort: 9, distance: 0 });
+				const inputBuffer = await fs.promises.readFile(path);
+				thumbnail = await this.wasmVipsService.convertAnimatedToJxl(inputBuffer, 374, 317, { quality: 100, lossless: true, effort: 9, distance: 0 });
 			} else {
 				thumbnail = await this.imageProcessingService.convertSharpToJxl(img, 498, 422);
 			}
