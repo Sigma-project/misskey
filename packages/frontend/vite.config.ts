@@ -223,6 +223,10 @@ export function getConfig(): UserConfig {
 			format: 'es',
 		},
 
+		optimizeDeps: {
+			exclude: ['@jsquash/jxl'],
+		},
+
 		test: {
 			environment: 'happy-dom',
 			deps: {
