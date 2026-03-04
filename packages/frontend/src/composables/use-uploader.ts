@@ -40,6 +40,10 @@ const IMAGE_EDITING_SUPPORTED_TYPES = [
 	'image/jpeg',
 	'image/png',
 	'image/webp',
+	'image/avif',
+	'image/gif',
+	'image/bmp',
+	'image/apng',
 ];
 
 const VIDEO_COMPRESSION_SUPPORTED_TYPES = [ // TODO
