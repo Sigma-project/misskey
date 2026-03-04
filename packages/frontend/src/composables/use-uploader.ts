@@ -92,24 +92,24 @@ function getCompressionSettings(level: 0 | 1 | 2 | 3 | 4) {
 		};
 	} else if (level === 2) {
 		return {
-			maxWidth: 2000,
-			maxHeight: 2000,
+			maxWidth: 4096,
+			maxHeight: 4096,
 			canvasQuality: 0.90,
 			jxlQuality: 90,
 			lossless: false,
 		};
 	} else if (level === 3) {
 		return {
-			maxWidth: 2000 * 0.75, // =1500
-			maxHeight: 2000 * 0.75, // =1500
+			maxWidth: 2560,
+			maxHeight: 2560,
 			canvasQuality: 0.85,
 			jxlQuality: 85,
 			lossless: false,
 		};
 	} else if (level === 4) {
 		return {
-			maxWidth: 2000 * 0.75 * 0.75, // =1125
-			maxHeight: 2000 * 0.75 * 0.75, // =1125
+			maxWidth: 1920,
+			maxHeight: 1920,
 			canvasQuality: 0.70,
 			jxlQuality: 70,
 			lossless: false,
