@@ -16,6 +16,7 @@ import { i18n } from '@/i18n.js';
 import { prefer } from '@/preferences.js';
 import { isJxlSupported } from '@/utility/isJxlSupported.js';
 import { isAvifSupported } from '@/utility/isAvifSupported.js';
+import { encodeToJxl, getImageDataFromCanvas } from '@/utility/jxl-encoder.js';
 import { uploadFile, UploadAbortedError } from '@/utility/drive.js';
 import * as os from '@/os.js';
 import { ensureSignin } from '@/i.js';
@@ -672,24 +673,75 @@ export function useUploader(options: {
 		const needsCompress = item.compressionLevel !== 0 && compressionSettings && IMAGE_EDITING_SUPPORTED_TYPES.includes(preprocessedFile.type) && !(await isAnimated(preprocessedFile));
 
 		if (needsCompress) {
-			const config = {
-				mimeType: isJxlSupported() ? 'image/jxl' as const : isAvifSupported() ? 'image/avif' as const : 'image/webp' as const,
-				maxWidth: compressionSettings.maxWidth,
-				maxHeight: compressionSettings.maxHeight,
-				quality: 1.0,
-			};
+			let compressed = false;
 
-			try {
-				const result = await readAndCompressImage(preprocessedFile, config);
-				if (result.size < preprocessedFile.size || preprocessedFile.type === 'image/jxl') {
-					// The compression may not always reduce the file size
-					// (and JXL is not browser safe yet)
+			// Stage 1: Canvas JXL（ブラウザが Canvas API で JXL をネイティブサポートしている場合）
+			if (!compressed && isJxlSupported()) {
+				try {
+					const result = await readAndCompressImage(preprocessedFile, {
+						mimeType: 'image/jxl' as const,
+						maxWidth: compressionSettings.maxWidth,
+						maxHeight: compressionSettings.maxHeight,
+						quality: 1.0,
+					});
+					// Canvas API はEXIF除去を兼ねるため、サイズ増加でも採用する
 					preprocessedFile = result;
 					item.compressedSize = result.size;
 					item.uploadName = item.name;
+					compressed = true;
+				} catch (err) {
+					console.error('Failed to compress image with Canvas JXL', err);
 				}
-			} catch (err) {
-				console.error('Failed to resize image', err);
+			}
+
+			// Stage 2: WASM JXL（@jsquash/jxl でエンコード）
+			if (!compressed) {
+				try {
+					const resizedCanvas = await readAndCompressImage(preprocessedFile, {
+						mimeType: null,
+						maxWidth: compressionSettings.maxWidth,
+						maxHeight: compressionSettings.maxHeight,
+					});
+					const imageData = getImageDataFromCanvas(resizedCanvas);
+					const isLossless = item.compressionLevel === 1;
+					const jxlBlob = await encodeToJxl(imageData, {
+						quality: 100,
+						lossless: isLossless,
+						effort: 9,
+					});
+					if (jxlBlob != null && (jxlBlob.size < preprocessedFile.size || isLossless)) {
+						preprocessedFile = jxlBlob;
+						item.compressedSize = jxlBlob.size;
+						item.uploadName = item.name;
+						compressed = true;
+					}
+				} catch (err) {
+					console.error('Failed to compress image with WASM JXL', err);
+				}
+			}
+
+			// Stage 3: Canvas AVIF/WebP フォールバック
+			if (!compressed) {
+				try {
+					const result = await readAndCompressImage(preprocessedFile, {
+						mimeType: isAvifSupported() ? 'image/avif' as const : 'image/webp' as const,
+						maxWidth: compressionSettings.maxWidth,
+						maxHeight: compressionSettings.maxHeight,
+						quality: 1.0,
+					});
+					if (result.size < preprocessedFile.size) {
+						preprocessedFile = result;
+						item.compressedSize = result.size;
+						item.uploadName = item.name;
+						compressed = true;
+					}
+				} catch (err) {
+					console.error('Failed to compress image with Canvas AVIF/WebP', err);
+				}
+			}
+
+			if (!compressed) {
+				item.uploadName = item.name;
 			}
 		} else {
 			item.compressedSize = null;
@@ -698,8 +750,11 @@ export function useUploader(options: {
 
 		imageBitmap.close();
 
-		if (item.thumbnail != null) URL.revokeObjectURL(item.thumbnail);
-		item.thumbnail = THUMBNAIL_SUPPORTED_TYPES.includes(preprocessedFile.type) ? window.URL.createObjectURL(preprocessedFile) : null;
+		// WASM JXL 圧縮後はブラウザで JXL を表示できないため、既存サムネイルを保持
+		if (preprocessedFile.type !== 'image/jxl' || isJxlSupported()) {
+			if (item.thumbnail != null) URL.revokeObjectURL(item.thumbnail);
+			item.thumbnail = THUMBNAIL_SUPPORTED_TYPES.includes(preprocessedFile.type) ? window.URL.createObjectURL(preprocessedFile) : null;
+		}
 		item.preprocessedFile = markRaw(preprocessedFile);
 	}
 
