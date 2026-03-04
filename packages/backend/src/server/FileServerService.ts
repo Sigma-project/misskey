@@ -19,6 +19,7 @@ import { StatusError } from '@/misc/status-error.js';
 import type Logger from '@/logger.js';
 import { DownloadService } from '@/core/DownloadService.js';
 import { IImageStreamable, ImageProcessingService, jxlDefault } from '@/core/ImageProcessingService.js';
+import { WasmVipsService } from '@/core/WasmVipsService.js';
 import { VideoProcessingService } from '@/core/VideoProcessingService.js';
 import { InternalStorageService } from '@/core/InternalStorageService.js';
 import { contentDisposition } from '@/misc/content-disposition.js';
@@ -49,6 +50,7 @@ export class FileServerService {
 		private fileInfoService: FileInfoService,
 		private downloadService: DownloadService,
 		private imageProcessingService: ImageProcessingService,
+		private wasmVipsService: WasmVipsService,
 		private videoProcessingService: VideoProcessingService,
 		private internalStorageService: InternalStorageService,
 		private loggerService: LoggerService,
@@ -365,18 +367,27 @@ export class FileServerService {
 						type: file.mime,
 					};
 				} else {
-					const data = (await sharpBmp(file.path, file.mime, { animated: !('static' in request.query) }))
-						.resize({
-							height: 'emoji' in request.query ? 256 : 640,
-							withoutEnlargement: true,
-						})
-						.jxl(jxlDefault);
+					const isStatic = 'static' in request.query;
+					const sharpInstance = await sharpBmp(file.path, file.mime, { animated: !isStatic });
+					const metadata = await sharpInstance.metadata();
+					const isAnimated = !isStatic && !!(metadata.pages && metadata.pages > 1);
 
-					image = {
-						data,
-						ext: 'jxl',
-						type: 'image/jxl',
-					};
+					if (isAnimated) {
+						const inputBuffer = await fs.promises.readFile(file.path);
+						const height = 'emoji' in request.query ? 256 : 640;
+						image = await this.wasmVipsService.convertAnimatedToJxl(inputBuffer, 16383, height);
+					} else {
+						image = {
+							data: sharpInstance
+								.resize({
+									height: 'emoji' in request.query ? 256 : 640,
+									withoutEnlargement: true,
+								})
+								.jxl(jxlDefault),
+							ext: 'jxl',
+							type: 'image/jxl',
+						};
+					}
 				}
 			} else if ('static' in request.query) {
 				image = this.imageProcessingService.convertSharpToJxlStream(await sharpBmp(file.path, file.mime), 498, 422);
