@@ -375,7 +375,8 @@ export class FileServerService {
 					if (isAnimated) {
 						const inputBuffer = await fs.promises.readFile(file.path);
 						const height = 'emoji' in request.query ? 256 : 640;
-						image = await this.wasmVipsService.convertAnimatedToJxl(inputBuffer, 16383, height);
+						// width は実質制限なし (height のみで制約)
+						image = await this.wasmVipsService.convertAnimatedToJxl(inputBuffer, 16383, height, jxlDefault);
 					} else {
 						image = {
 							data: sharpInstance
