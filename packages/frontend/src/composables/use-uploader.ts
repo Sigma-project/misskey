@@ -86,21 +86,33 @@ function getCompressionSettings(level: 0 | 1 | 2 | 3 | 4) {
 		return {
 			maxWidth: Infinity,
 			maxHeight: Infinity,
+			canvasQuality: 1.0,
+			jxlQuality: 100,
+			lossless: true,
 		};
 	} else if (level === 2) {
 		return {
 			maxWidth: 2000,
 			maxHeight: 2000,
+			canvasQuality: 0.90,
+			jxlQuality: 90,
+			lossless: false,
 		};
 	} else if (level === 3) {
 		return {
 			maxWidth: 2000 * 0.75, // =1500
 			maxHeight: 2000 * 0.75, // =1500
+			canvasQuality: 0.85,
+			jxlQuality: 85,
+			lossless: false,
 		};
 	} else if (level === 4) {
 		return {
 			maxWidth: 2000 * 0.75 * 0.75, // =1125
 			maxHeight: 2000 * 0.75 * 0.75, // =1125
+			canvasQuality: 0.70,
+			jxlQuality: 70,
+			lossless: false,
 		};
 	} else {
 		return null;
