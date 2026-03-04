@@ -694,7 +694,7 @@ export function useUploader(options: {
 						mimeType: 'image/jxl' as const,
 						maxWidth: compressionSettings.maxWidth,
 						maxHeight: compressionSettings.maxHeight,
-						quality: 1.0,
+						quality: compressionSettings.canvasQuality,
 					});
 					// Canvas API はEXIF除去を兼ねるため、サイズ増加でも採用する
 					preprocessedFile = result;
@@ -715,13 +715,12 @@ export function useUploader(options: {
 						maxHeight: compressionSettings.maxHeight,
 					});
 					const imageData = getImageDataFromCanvas(resizedCanvas);
-					const isLossless = item.compressionLevel === 1;
 					const jxlBlob = await encodeToJxl(imageData, {
-						quality: 100,
-						lossless: isLossless,
+						quality: compressionSettings.jxlQuality,
+						lossless: compressionSettings.lossless,
 						effort: 9,
 					});
-					if (jxlBlob != null && (jxlBlob.size < preprocessedFile.size || isLossless)) {
+					if (jxlBlob != null && (jxlBlob.size < preprocessedFile.size || compressionSettings.lossless)) {
 						preprocessedFile = jxlBlob;
 						item.compressedSize = jxlBlob.size;
 						item.uploadName = item.name;
@@ -739,7 +738,7 @@ export function useUploader(options: {
 						mimeType: isAvifSupported() ? 'image/avif' as const : 'image/webp' as const,
 						maxWidth: compressionSettings.maxWidth,
 						maxHeight: compressionSettings.maxHeight,
-						quality: 1.0,
+						quality: compressionSettings.canvasQuality,
 					});
 					if (result.size < preprocessedFile.size) {
 						preprocessedFile = result;
