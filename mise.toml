@@ -33,8 +33,8 @@ description = "Stop and remove test containers"
 run = "docker compose -f compose.test.yml down"
 
 [tasks."ci:setup"]
-description = "Copy test config to .config/"
-run = "cp .github/misskey/test.yml .config/"
+description = "Initialize submodules and copy test config"
+run = ["git submodule update --init", "cp .github/misskey/test.yml .config/"]
 
 [tasks."ci:build"]
 description = "Install dependencies and build for CI"
