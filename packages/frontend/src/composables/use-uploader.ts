@@ -83,6 +83,7 @@ export type UploaderItem = {
 	imageFrameParams: ImageFrameParams | null;
 	isSensitive?: boolean;
 	caption?: string | null;
+	isAnimated?: boolean;
 	abort?: (() => void) | null;
 	abortPreprocess?: (() => void) | null;
 };
