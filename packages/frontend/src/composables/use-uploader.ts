@@ -34,6 +34,8 @@ const THUMBNAIL_SUPPORTED_TYPES = [
 	'image/jxl',
 	'image/svg+xml',
 	'image/gif',
+	'image/bmp',
+	'image/apng',
 ];
 
 const IMAGE_EDITING_SUPPORTED_TYPES = [
