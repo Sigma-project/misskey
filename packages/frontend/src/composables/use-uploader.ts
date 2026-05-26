@@ -5,7 +5,7 @@
 
 import * as Misskey from 'misskey-js';
 import { readAndCompressImage } from '@misskey-dev/browser-image-resizer';
-import isAnimated from 'is-file-animated';
+import { isFileAnimated } from '@/utility/isFileAnimated.js';
 import { EventEmitter } from 'eventemitter3';
 import { computed, markRaw, onMounted, onUnmounted, ref, triggerRef } from 'vue';
 import type { MenuItem } from '@/types/menu.js';
@@ -34,12 +34,18 @@ const THUMBNAIL_SUPPORTED_TYPES = [
 	'image/jxl',
 	'image/svg+xml',
 	'image/gif',
+	'image/bmp',
+	'image/apng',
 ];
 
 const IMAGE_EDITING_SUPPORTED_TYPES = [
 	'image/jpeg',
 	'image/png',
 	'image/webp',
+	'image/avif',
+	'image/gif',
+	'image/bmp',
+	'image/apng',
 ];
 
 const VIDEO_COMPRESSION_SUPPORTED_TYPES = [ // TODO
@@ -77,6 +83,7 @@ export type UploaderItem = {
 	imageFrameParams: ImageFrameParams | null;
 	isSensitive?: boolean;
 	caption?: string | null;
+	isAnimated?: boolean;
 	abort?: (() => void) | null;
 	abortPreprocess?: (() => void) | null;
 };
@@ -92,24 +99,24 @@ function getCompressionSettings(level: 0 | 1 | 2 | 3 | 4) {
 		};
 	} else if (level === 2) {
 		return {
-			maxWidth: 2000,
-			maxHeight: 2000,
+			maxWidth: 4096,
+			maxHeight: 4096,
 			canvasQuality: 0.90,
 			jxlQuality: 90,
 			lossless: false,
 		};
 	} else if (level === 3) {
 		return {
-			maxWidth: 2000 * 0.75, // =1500
-			maxHeight: 2000 * 0.75, // =1500
+			maxWidth: 2560,
+			maxHeight: 2560,
 			canvasQuality: 0.85,
 			jxlQuality: 85,
 			lossless: false,
 		};
 	} else if (level === 4) {
 		return {
-			maxWidth: 2000 * 0.75 * 0.75, // =1125
-			maxHeight: 2000 * 0.75 * 0.75, // =1125
+			maxWidth: 1920,
+			maxHeight: 1920,
 			canvasQuality: 0.70,
 			jxlQuality: 70,
 			lossless: false,
@@ -232,6 +239,7 @@ export function useUploader(options: {
 		if (
 			uploaderFeatures.value.imageEditing &&
 			IMAGE_EDITING_SUPPORTED_TYPES.includes(item.file.type) &&
+			!item.isAnimated &&
 			!item.preprocessing &&
 			!item.uploading &&
 			!item.uploaded
@@ -292,6 +300,7 @@ export function useUploader(options: {
 			uploaderFeatures.value.watermark &&
 			$i.policies.watermarkAvailable &&
 			IMAGE_EDITING_SUPPORTED_TYPES.includes(item.file.type) &&
+			!item.isAnimated &&
 			!item.preprocessing &&
 			!item.uploading &&
 			!item.uploaded
@@ -346,6 +355,7 @@ export function useUploader(options: {
 		if (
 			uploaderFeatures.value.imageEditing &&
 			IMAGE_EDITING_SUPPORTED_TYPES.includes(item.file.type) &&
+			!item.isAnimated &&
 			!item.preprocessing &&
 			!item.uploading &&
 			!item.uploaded
@@ -410,6 +420,7 @@ export function useUploader(options: {
 
 		if (
 			(IMAGE_EDITING_SUPPORTED_TYPES.includes(item.file.type) || VIDEO_COMPRESSION_SUPPORTED_TYPES.includes(item.file.type)) &&
+			!item.isAnimated &&
 			!item.preprocessing &&
 			!item.uploading &&
 			!item.uploaded
@@ -626,6 +637,19 @@ export function useUploader(options: {
 	}
 
 	async function preprocessForImage(item: UploaderItem): Promise<void> {
+		item.isAnimated = await isFileAnimated(item.file);
+
+		// アニメ画像は watermark/image-frame/圧縮いずれの canvas 経路でも 1 フレーム化されてしまうため、
+		// 設定済みのレイヤー類をクリアした上で前処理をすべてスキップする
+		if (item.isAnimated) {
+			item.watermarkLayers = null;
+			item.imageFrameParams = null;
+			item.compressedSize = null;
+			item.uploadName = item.name;
+			item.preprocessedFile = markRaw(item.file);
+			return;
+		}
+
 		const imageBitmap = await window.createImageBitmap(item.file);
 
 		let preprocessedFile: Blob | File = item.file;
@@ -682,7 +706,7 @@ export function useUploader(options: {
 		}
 
 		const compressionSettings = getCompressionSettings(item.compressionLevel);
-		const needsCompress = item.compressionLevel !== 0 && compressionSettings && IMAGE_EDITING_SUPPORTED_TYPES.includes(preprocessedFile.type) && !(await isAnimated(preprocessedFile));
+		const needsCompress = item.compressionLevel !== 0 && compressionSettings && IMAGE_EDITING_SUPPORTED_TYPES.includes(preprocessedFile.type);
 
 		if (needsCompress) {
 			let compressed = false;
