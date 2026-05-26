@@ -658,7 +658,7 @@ export function useUploader(options: {
 			});
 		}
 
-		const needsImageFrame = item.imageFrameParams != null && IMAGE_EDITING_SUPPORTED_TYPES.includes(preprocessedFile.type);
+		const needsImageFrame = item.imageFrameParams != null && IMAGE_EDITING_SUPPORTED_TYPES.includes(preprocessedFile.type) && !(await isFileAnimated(preprocessedFile));
 		if (needsImageFrame && item.imageFrameParams != null) {
 			const canvas = window.document.createElement('canvas');
 			const ExifReader = await import('exifreader');
