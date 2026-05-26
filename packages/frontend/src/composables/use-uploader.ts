@@ -239,6 +239,7 @@ export function useUploader(options: {
 		if (
 			uploaderFeatures.value.imageEditing &&
 			IMAGE_EDITING_SUPPORTED_TYPES.includes(item.file.type) &&
+			!item.isAnimated &&
 			!item.preprocessing &&
 			!item.uploading &&
 			!item.uploaded
@@ -299,6 +300,7 @@ export function useUploader(options: {
 			uploaderFeatures.value.watermark &&
 			$i.policies.watermarkAvailable &&
 			IMAGE_EDITING_SUPPORTED_TYPES.includes(item.file.type) &&
+			!item.isAnimated &&
 			!item.preprocessing &&
 			!item.uploading &&
 			!item.uploaded
@@ -353,6 +355,7 @@ export function useUploader(options: {
 		if (
 			uploaderFeatures.value.imageEditing &&
 			IMAGE_EDITING_SUPPORTED_TYPES.includes(item.file.type) &&
+			!item.isAnimated &&
 			!item.preprocessing &&
 			!item.uploading &&
 			!item.uploaded
@@ -417,6 +420,7 @@ export function useUploader(options: {
 
 		if (
 			(IMAGE_EDITING_SUPPORTED_TYPES.includes(item.file.type) || VIDEO_COMPRESSION_SUPPORTED_TYPES.includes(item.file.type)) &&
+			!item.isAnimated &&
 			!item.preprocessing &&
 			!item.uploading &&
 			!item.uploaded
