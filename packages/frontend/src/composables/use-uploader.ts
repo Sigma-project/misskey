@@ -633,11 +633,24 @@ export function useUploader(options: {
 	}
 
 	async function preprocessForImage(item: UploaderItem): Promise<void> {
+		item.isAnimated = await isFileAnimated(item.file);
+
+		// アニメ画像は watermark/image-frame/圧縮いずれの canvas 経路でも 1 フレーム化されてしまうため、
+		// 設定済みのレイヤー類をクリアした上で前処理をすべてスキップする
+		if (item.isAnimated) {
+			item.watermarkLayers = null;
+			item.imageFrameParams = null;
+			item.compressedSize = null;
+			item.uploadName = item.name;
+			item.preprocessedFile = markRaw(item.file);
+			return;
+		}
+
 		const imageBitmap = await window.createImageBitmap(item.file);
 
 		let preprocessedFile: Blob | File = item.file;
 
-		const needsWatermark = item.watermarkLayers != null && IMAGE_EDITING_SUPPORTED_TYPES.includes(preprocessedFile.type) && $i.policies.watermarkAvailable && !(await isFileAnimated(preprocessedFile));
+		const needsWatermark = item.watermarkLayers != null && IMAGE_EDITING_SUPPORTED_TYPES.includes(preprocessedFile.type) && $i.policies.watermarkAvailable;
 		if (needsWatermark && item.watermarkLayers != null) {
 			const canvas = window.document.createElement('canvas');
 			const WatermarkRenderer = await import('@/utility/watermark/WatermarkRenderer.js').then(x => x.WatermarkRenderer);
@@ -661,7 +674,7 @@ export function useUploader(options: {
 			});
 		}
 
-		const needsImageFrame = item.imageFrameParams != null && IMAGE_EDITING_SUPPORTED_TYPES.includes(preprocessedFile.type) && !(await isFileAnimated(preprocessedFile));
+		const needsImageFrame = item.imageFrameParams != null && IMAGE_EDITING_SUPPORTED_TYPES.includes(preprocessedFile.type);
 		if (needsImageFrame && item.imageFrameParams != null) {
 			const canvas = window.document.createElement('canvas');
 			const ExifReader = await import('exifreader');
@@ -689,7 +702,7 @@ export function useUploader(options: {
 		}
 
 		const compressionSettings = getCompressionSettings(item.compressionLevel);
-		const needsCompress = item.compressionLevel !== 0 && compressionSettings && IMAGE_EDITING_SUPPORTED_TYPES.includes(preprocessedFile.type) && !(await isFileAnimated(preprocessedFile));
+		const needsCompress = item.compressionLevel !== 0 && compressionSettings && IMAGE_EDITING_SUPPORTED_TYPES.includes(preprocessedFile.type);
 
 		if (needsCompress) {
 			let compressed = false;
