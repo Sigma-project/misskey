@@ -314,7 +314,7 @@ export class DriveService {
 
 			satisfyWebpublic = !!(
 				type !== 'image/svg+xml' && // security reason
-				!['image/jpeg', 'image/webp', 'image/avif'].includes(type) && // needs JXL conversion
+				!['image/jpeg', 'image/webp', 'image/avif', 'image/png', 'image/bmp'].includes(type) && // needs JXL conversion
 			!(metadata.exif ?? metadata.iptc ?? metadata.xmp ?? metadata.tifftagPhotoshop) &&
 				metadata.width && metadata.width <= 11648 &&
 				metadata.height && metadata.height <= 11648
@@ -334,10 +334,9 @@ export class DriveService {
 			this.registerLogger.info('creating web image');
 
 			try {
-				if (['image/jpeg', 'image/webp', 'image/avif', 'image/jxl'].includes(type)) {
+				if (['image/jpeg', 'image/webp', 'image/avif', 'image/jxl', 'image/png', 'image/bmp', 'image/svg+xml'].includes(type)) {
+					// jxlDefaultはロスレス設定なのでpng/bmp/svg由来でも画質は劣化しない
 					webpublic = await this.imageProcessingService.convertSharpToJxl(img, 11648, 11648);
-				} else if (['image/png', 'image/bmp', 'image/svg+xml'].includes(type)) {
-					webpublic = await this.imageProcessingService.convertSharpToPng(img, 11648, 11648);
 				} else {
 					this.registerLogger.debug('web image not created (not an required image)');
 				}
