@@ -132,30 +132,4 @@ export class ImageProcessingService {
 		};
 	}
 
-	/**
-	 * Convert to PNG
-	 *   with resize, remove metadata, resolve orientation, stop animation
-	 */
-	@bindThis
-	public async convertToPng(path: string, width: number, height: number): Promise<IImage> {
-		return this.convertSharpToPng(sharp(path), width, height);
-	}
-
-	@bindThis
-	public async convertSharpToPng(sharp: sharp.Sharp, width: number, height: number): Promise<IImage> {
-		const data = await sharp
-			.resize(width, height, {
-				fit: 'inside',
-				withoutEnlargement: true,
-			})
-			.rotate()
-			.png()
-			.toBuffer();
-
-		return {
-			data,
-			ext: 'png',
-			type: 'image/png',
-		};
-	}
 }
