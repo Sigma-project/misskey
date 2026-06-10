@@ -19,3 +19,107 @@ run = [
   "pnpm run build",
   "pnpm run migrate",
 ]
+
+# =============================================================================
+# CI Tasks
+# =============================================================================
+
+[tasks."ci:services:up"]
+description = "Start PostgreSQL and Redis containers for testing"
+run = "docker compose -f compose.test.yml up -d --wait"
+
+[tasks."ci:services:down"]
+description = "Stop and remove test containers"
+run = "docker compose -f compose.test.yml down"
+
+[tasks."ci:setup"]
+description = "Initialize submodules and copy test config"
+run = ["git submodule update --init", "cp .github/misskey/test.yml .config/"]
+
+[tasks."ci:build"]
+description = "Install dependencies and build for CI"
+depends = ["ci:setup"]
+run = ["pnpm i --frozen-lockfile", "pnpm build"]
+
+[tasks."ci:lint"]
+description = "Run ESLint on all workspaces"
+depends = ["ci:build"]
+run = """
+failed=0
+for ws in backend frontend frontend-shared frontend-builder frontend-embed icons-subsetter sw misskey-js misskey-bubble-game misskey-reversi; do
+  echo "==> Linting $ws..."
+  pnpm --filter "$ws" run eslint || failed=1
+done
+exit $failed
+"""
+
+[tasks."ci:typecheck"]
+description = "Run type checking on key workspaces"
+depends = ["ci:build"]
+run = """
+failed=0
+for ws in backend frontend sw misskey-js; do
+  echo "==> Typechecking $ws..."
+  pnpm --filter "$ws" run typecheck || failed=1
+done
+exit $failed
+"""
+
+[tasks."ci:test:backend"]
+description = "Run backend unit, e2e, and migration tests sequentially"
+depends = ["ci:build", "ci:services:up"]
+run = [
+  "pnpm --filter backend test-and-coverage",
+  "pnpm --filter backend test-and-coverage:e2e",
+  "MISSKEY_CONFIG_YML=test.yml pnpm --filter backend migrate",
+  "MISSKEY_CONFIG_YML=test.yml pnpm --filter backend check-migrations",
+]
+
+[tasks."ci:test:frontend:unit"]
+description = "Run frontend unit tests"
+depends = ["ci:build"]
+run = "pnpm --filter frontend test-and-coverage"
+
+[tasks."ci:test:frontend:e2e"]
+description = "Run frontend Cypress E2E tests (requires browser)"
+depends = ["ci:build", "ci:services:up"]
+run = [
+  "pnpm exec cypress install",
+  "pnpm exec start-server-and-test 'pnpm start:test' http://localhost:61812 'pnpm exec cypress run --browser chrome'",
+]
+
+[tasks."ci:test:misskey-js"]
+description = "Build and test misskey-js"
+depends = ["ci:build"]
+run = "pnpm --filter misskey-js test"
+
+[tasks."ci:locale"]
+description = "Verify locale files"
+depends = ["ci:build"]
+run = ["pnpm --filter i18n build", "pnpm --filter i18n verify"]
+
+[tasks."ci:validate-api"]
+description = "Validate OpenAPI api.json"
+depends = ["ci:build"]
+run = [
+  "pnpm --filter backend generate-api-json",
+  "npx @redocly/cli lint --extends=minimal ./packages/backend/built/api.json",
+]
+
+[tasks."ci:build:production"]
+description = "Test production build"
+depends = ["ci:setup"]
+env = { NODE_ENV = "production" }
+run = ["pnpm i --frozen-lockfile", "pnpm build"]
+
+[tasks.ci]
+description = "Run all CI checks (lint, typecheck, tests) in parallel"
+depends = [
+  "ci:lint",
+  "ci:typecheck",
+  "ci:test:backend",
+  "ci:test:frontend:unit",
+  "ci:test:misskey-js",
+  "ci:locale",
+  "ci:validate-api",
+]
