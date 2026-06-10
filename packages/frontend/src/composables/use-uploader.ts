@@ -5,7 +5,7 @@
 
 import * as Misskey from 'misskey-js';
 import { readAndCompressImage } from '@misskey-dev/browser-image-resizer';
-import isAnimated from 'is-file-animated';
+import { isFileAnimated } from '@/utility/isFileAnimated.js';
 import { EventEmitter } from 'eventemitter3';
 import { computed, markRaw, onMounted, onUnmounted, ref, triggerRef } from 'vue';
 import type { MenuItem } from '@/types/menu.js';
@@ -15,6 +15,8 @@ import { genId } from '@/utility/id.js';
 import { i18n } from '@/i18n.js';
 import { prefer } from '@/preferences.js';
 import { isJxlSupported } from '@/utility/isJxlSupported.js';
+import { isAvifSupported } from '@/utility/isAvifSupported.js';
+import { encodeToJxl, getImageDataFromCanvas } from '@/utility/jxl-encoder.js';
 import { uploadFile, UploadAbortedError } from '@/utility/drive.js';
 import * as os from '@/os.js';
 import { ensureSignin } from '@/i.js';
@@ -28,15 +30,22 @@ const THUMBNAIL_SUPPORTED_TYPES = [
 	'image/jpeg',
 	'image/png',
 	'image/webp',
+	'image/avif',
 	'image/jxl',
 	'image/svg+xml',
 	'image/gif',
+	'image/bmp',
+	'image/apng',
 ];
 
 const IMAGE_EDITING_SUPPORTED_TYPES = [
 	'image/jpeg',
 	'image/png',
 	'image/webp',
+	'image/avif',
+	'image/gif',
+	'image/bmp',
+	'image/apng',
 ];
 
 const VIDEO_COMPRESSION_SUPPORTED_TYPES = [ // TODO
@@ -53,12 +62,6 @@ const VIDEO_PREPROCESS_NEEDED_TYPES = [
 	...VIDEO_COMPRESSION_SUPPORTED_TYPES,
 ];
 
-const mimeTypeMap = {
-	'image/jxl': 'jxl',
-	'image/jpeg': 'jpg',
-	'image/png': 'png',
-} as const;
-
 export type UploaderItem = {
 	id: string;
 	name: string;
@@ -71,7 +74,7 @@ export type UploaderItem = {
 	uploaded: Misskey.entities.DriveFile | null;
 	uploadFailed: boolean;
 	aborted: boolean;
-	compressionLevel: 0 | 1 | 2 | 3;
+	compressionLevel: 0 | 1 | 2 | 3 | 4;
 	compressedSize?: number | null;
 	preprocessedFile?: Blob | null;
 	file: File;
@@ -80,25 +83,43 @@ export type UploaderItem = {
 	imageFrameParams: ImageFrameParams | null;
 	isSensitive?: boolean;
 	caption?: string | null;
+	isAnimated?: boolean;
 	abort?: (() => void) | null;
 	abortPreprocess?: (() => void) | null;
 };
 
-function getCompressionSettings(level: 0 | 1 | 2 | 3) {
+function getCompressionSettings(level: 0 | 1 | 2 | 3 | 4) {
 	if (level === 1) {
 		return {
-			maxWidth: 2000,
-			maxHeight: 2000,
+			maxWidth: Infinity,
+			maxHeight: Infinity,
+			canvasQuality: 1.0,
+			jxlQuality: 100,
+			lossless: true,
 		};
 	} else if (level === 2) {
 		return {
-			maxWidth: 2000 * 0.75, // =1500
-			maxHeight: 2000 * 0.75, // =1500
+			maxWidth: 4096,
+			maxHeight: 4096,
+			canvasQuality: 0.90,
+			jxlQuality: 90,
+			lossless: false,
 		};
 	} else if (level === 3) {
 		return {
-			maxWidth: 2000 * 0.75 * 0.75, // =1125
-			maxHeight: 2000 * 0.75 * 0.75, // =1125
+			maxWidth: 2560,
+			maxHeight: 2560,
+			canvasQuality: 0.85,
+			jxlQuality: 85,
+			lossless: false,
+		};
+	} else if (level === 4) {
+		return {
+			maxWidth: 1920,
+			maxHeight: 1920,
+			canvasQuality: 0.70,
+			jxlQuality: 70,
+			lossless: false,
 		};
 	} else {
 		return null;
@@ -218,6 +239,7 @@ export function useUploader(options: {
 		if (
 			uploaderFeatures.value.imageEditing &&
 			IMAGE_EDITING_SUPPORTED_TYPES.includes(item.file.type) &&
+			!item.isAnimated &&
 			!item.preprocessing &&
 			!item.uploading &&
 			!item.uploaded
@@ -278,6 +300,7 @@ export function useUploader(options: {
 			uploaderFeatures.value.watermark &&
 			$i.policies.watermarkAvailable &&
 			IMAGE_EDITING_SUPPORTED_TYPES.includes(item.file.type) &&
+			!item.isAnimated &&
 			!item.preprocessing &&
 			!item.uploading &&
 			!item.uploaded
@@ -332,6 +355,7 @@ export function useUploader(options: {
 		if (
 			uploaderFeatures.value.imageEditing &&
 			IMAGE_EDITING_SUPPORTED_TYPES.includes(item.file.type) &&
+			!item.isAnimated &&
 			!item.preprocessing &&
 			!item.uploading &&
 			!item.uploaded
@@ -396,11 +420,12 @@ export function useUploader(options: {
 
 		if (
 			(IMAGE_EDITING_SUPPORTED_TYPES.includes(item.file.type) || VIDEO_COMPRESSION_SUPPORTED_TYPES.includes(item.file.type)) &&
+			!item.isAnimated &&
 			!item.preprocessing &&
 			!item.uploading &&
 			!item.uploaded
 		) {
-			function changeCompressionLevel(level: 0 | 1 | 2 | 3) {
+			function changeCompressionLevel(level: 0 | 1 | 2 | 3 | 4) {
 				item.compressionLevel = level;
 				preprocess(item).then(() => {
 					triggerRef(items);
@@ -415,11 +440,13 @@ export function useUploader(options: {
 					if (item.compressionLevel === 0 || item.compressionLevel == null) {
 						text += `: ${i18n.ts.none}`;
 					} else if (item.compressionLevel === 1) {
-						text += `: ${i18n.ts.low}`;
+						text += `: ${i18n.ts.highest}`;
 					} else if (item.compressionLevel === 2) {
-						text += `: ${i18n.ts.medium}`;
-					} else if (item.compressionLevel === 3) {
 						text += `: ${i18n.ts.high}`;
+					} else if (item.compressionLevel === 3) {
+						text += `: ${i18n.ts.medium}`;
+					} else if (item.compressionLevel === 4) {
+						text += `: ${i18n.ts.low}`;
 					}
 
 					return text;
@@ -434,19 +461,24 @@ export function useUploader(options: {
 					type: 'divider',
 				}, {
 					type: 'radioOption',
-					text: i18n.ts.low,
+					text: i18n.ts.highest,
 					active: computed(() => item.compressionLevel === 1),
 					action: () => changeCompressionLevel(1),
 				}, {
 					type: 'radioOption',
-					text: i18n.ts.medium,
+					text: i18n.ts.high,
 					active: computed(() => item.compressionLevel === 2),
 					action: () => changeCompressionLevel(2),
 				}, {
 					type: 'radioOption',
-					text: i18n.ts.high,
+					text: i18n.ts.medium,
 					active: computed(() => item.compressionLevel === 3),
 					action: () => changeCompressionLevel(3),
+				}, {
+					type: 'radioOption',
+					text: i18n.ts.low,
+					active: computed(() => item.compressionLevel === 4),
+					action: () => changeCompressionLevel(4),
 				}],
 			});
 		}
@@ -605,6 +637,19 @@ export function useUploader(options: {
 	}
 
 	async function preprocessForImage(item: UploaderItem): Promise<void> {
+		item.isAnimated = await isFileAnimated(item.file);
+
+		// アニメ画像は watermark/image-frame/圧縮いずれの canvas 経路でも 1 フレーム化されてしまうため、
+		// 設定済みのレイヤー類をクリアした上で前処理をすべてスキップする
+		if (item.isAnimated) {
+			item.watermarkLayers = null;
+			item.imageFrameParams = null;
+			item.compressedSize = null;
+			item.uploadName = item.name;
+			item.preprocessedFile = markRaw(item.file);
+			return;
+		}
+
 		const imageBitmap = await window.createImageBitmap(item.file);
 
 		let preprocessedFile: Blob | File = item.file;
@@ -661,27 +706,77 @@ export function useUploader(options: {
 		}
 
 		const compressionSettings = getCompressionSettings(item.compressionLevel);
-		const needsCompress = item.compressionLevel !== 0 && compressionSettings && IMAGE_EDITING_SUPPORTED_TYPES.includes(preprocessedFile.type) && !(await isAnimated(preprocessedFile));
+		const needsCompress = item.compressionLevel !== 0 && compressionSettings && IMAGE_EDITING_SUPPORTED_TYPES.includes(preprocessedFile.type);
 
 		if (needsCompress) {
-			const config = {
-				mimeType: isJxlSupported() ? 'image/jxl' : 'image/jpeg',
-				maxWidth: compressionSettings.maxWidth,
-				maxHeight: compressionSettings.maxHeight,
-				quality: isJxlSupported() ? 1.0 : 0.8,
-			};
+			let compressed = false;
 
-			try {
-				const result = await readAndCompressImage(preprocessedFile, config);
-				if (result.size < preprocessedFile.size || preprocessedFile.type === 'image/jxl') {
-					// The compression may not always reduce the file size
-					// (and JXL is not browser safe yet)
+			// Stage 1: Canvas JXL（ブラウザが Canvas API で JXL をネイティブサポートしている場合）
+			if (!compressed && isJxlSupported()) {
+				try {
+					const result = await readAndCompressImage(preprocessedFile, {
+						mimeType: 'image/jxl' as const,
+						maxWidth: compressionSettings.maxWidth,
+						maxHeight: compressionSettings.maxHeight,
+						quality: compressionSettings.canvasQuality,
+					});
+					// Canvas API はEXIF除去を兼ねるため、サイズ増加でも採用する
 					preprocessedFile = result;
 					item.compressedSize = result.size;
-					item.uploadName = preprocessedFile.type !== config.mimeType ? `${item.name}.${mimeTypeMap[config.mimeType]}` : item.name;
+					item.uploadName = item.name;
+					compressed = true;
+				} catch (err) {
+					console.error('Failed to compress image with Canvas JXL', err);
 				}
-			} catch (err) {
-				console.error('Failed to resize image', err);
+			}
+
+			// Stage 2: WASM JXL（@jsquash/jxl でエンコード）
+			if (!compressed) {
+				try {
+					const resizedCanvas = await readAndCompressImage(preprocessedFile, {
+						mimeType: null,
+						maxWidth: compressionSettings.maxWidth,
+						maxHeight: compressionSettings.maxHeight,
+					});
+					const imageData = getImageDataFromCanvas(resizedCanvas);
+					const jxlBlob = await encodeToJxl(imageData, {
+						quality: compressionSettings.jxlQuality,
+						lossless: compressionSettings.lossless,
+						effort: 9,
+					});
+					if (jxlBlob != null && (jxlBlob.size < preprocessedFile.size || compressionSettings.lossless)) {
+						preprocessedFile = jxlBlob;
+						item.compressedSize = jxlBlob.size;
+						item.uploadName = item.name;
+						compressed = true;
+					}
+				} catch (err) {
+					console.error('Failed to compress image with WASM JXL', err);
+				}
+			}
+
+			// Stage 3: Canvas AVIF/WebP フォールバック
+			if (!compressed) {
+				try {
+					const result = await readAndCompressImage(preprocessedFile, {
+						mimeType: isAvifSupported() ? 'image/avif' as const : 'image/webp' as const,
+						maxWidth: compressionSettings.maxWidth,
+						maxHeight: compressionSettings.maxHeight,
+						quality: compressionSettings.canvasQuality,
+					});
+					if (result.size < preprocessedFile.size) {
+						preprocessedFile = result;
+						item.compressedSize = result.size;
+						item.uploadName = item.name;
+						compressed = true;
+					}
+				} catch (err) {
+					console.error('Failed to compress image with Canvas AVIF/WebP', err);
+				}
+			}
+
+			if (!compressed) {
+				item.uploadName = item.name;
 			}
 		} else {
 			item.compressedSize = null;
@@ -690,8 +785,11 @@ export function useUploader(options: {
 
 		imageBitmap.close();
 
-		if (item.thumbnail != null) URL.revokeObjectURL(item.thumbnail);
-		item.thumbnail = THUMBNAIL_SUPPORTED_TYPES.includes(preprocessedFile.type) ? window.URL.createObjectURL(preprocessedFile) : null;
+		// WASM JXL 圧縮後はブラウザで JXL を表示できないため、既存サムネイルを保持
+		if (preprocessedFile.type !== 'image/jxl' || isJxlSupported()) {
+			if (item.thumbnail != null) URL.revokeObjectURL(item.thumbnail);
+			item.thumbnail = THUMBNAIL_SUPPORTED_TYPES.includes(preprocessedFile.type) ? window.URL.createObjectURL(preprocessedFile) : null;
+		}
 		item.preprocessedFile = markRaw(preprocessedFile);
 	}
 
@@ -715,18 +813,36 @@ export function useUploader(options: {
 				format: new mediabunny.Mp4OutputFormat(),
 			});
 
+			let bitrate;
+			if (item.compressionLevel === 1) {
+				// @ts-expect-error Quality constructor accepts a factor parameter internally
+				bitrate = new mediabunny.Quality(8);
+			} else if (item.compressionLevel === 2) {
+				bitrate = mediabunny.QUALITY_VERY_HIGH;
+			} else if (item.compressionLevel === 3) {
+				bitrate = mediabunny.QUALITY_MEDIUM;
+			} else {
+				bitrate = mediabunny.QUALITY_VERY_LOW;
+			}
+
+			const videoOptions = {
+				codec: (await mediabunny.getFirstEncodableVideoCodec(['av1', 'hevc', 'avc'])) ?? undefined,
+				bitrate,
+			};
+
 			const currentConversion = await mediabunny.Conversion.init({
 				input,
 				output,
-				video: {
-					//width: 320, // Height will be deduced automatically to retain aspect ratio
-					bitrate: item.compressionLevel === 1 ? mediabunny.QUALITY_VERY_HIGH : item.compressionLevel === 2 ? mediabunny.QUALITY_MEDIUM : mediabunny.QUALITY_VERY_LOW,
-				},
+				video: videoOptions,
 				audio: {
 					// Explicitly keep audio (don't discard) and copy it if possible
 					// without re-encoding to avoid WebCodecs limitations on iOS Safari
 					discard: false,
 				},
+				tags: (inputTags) => ({
+					title: inputTags.title,
+					description: inputTags.description,
+				}),
 			});
 
 			currentConversion.onProgress = newProgress => item.preprocessProgress = newProgress;
