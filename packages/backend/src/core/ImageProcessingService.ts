@@ -131,5 +131,4 @@ export class ImageProcessingService {
 			type: 'image/jxl',
 		};
 	}
-
 }
