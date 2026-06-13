@@ -26,6 +26,7 @@ import { VideoProcessingService } from '@/core/VideoProcessingService.js';
 import { ImageProcessingService } from '@/core/ImageProcessingService.js';
 import type { IImage } from '@/core/ImageProcessingService.js';
 import { QueueService } from '@/core/QueueService.js';
+import { FFmpegCapabilityService } from '@/core/FFmpegCapabilityService.js';
 import type { MiDriveFolder } from '@/models/DriveFolder.js';
 import { createTemp } from '@/misc/create-temp.js';
 import DriveChart from '@/core/chart/charts/drive.js';
@@ -114,6 +115,7 @@ export class DriveService {
 		private driveFoldersRepository: DriveFoldersRepository,
 
 		private fileInfoService: FileInfoService,
+		private ffmpegCapabilityService: FFmpegCapabilityService,
 		private userEntityService: UserEntityService,
 		private driveFileEntityService: DriveFileEntityService,
 		private idService: IdService,
@@ -577,6 +579,9 @@ export class DriveService {
 			width?: number;
 			height?: number;
 			orientation?: number;
+			duration?: number;
+			videoCodec?: string;
+			audioCodec?: string;
 		} = {};
 
 		if (info.width) {
@@ -585,6 +590,15 @@ export class DriveService {
 		}
 		if (info.orientation != null) {
 			properties['orientation'] = info.orientation;
+		}
+		if (info.duration != null) {
+			properties['duration'] = info.duration;
+		}
+		if (info.videoCodec != null) {
+			properties['videoCodec'] = info.videoCodec;
+		}
+		if (info.audioCodec != null) {
+			properties['audioCodec'] = info.audioCodec;
 		}
 
 		const profile = user ? await this.userProfilesRepository.findOneBy({ userId: user.id }) : null;
@@ -677,7 +691,36 @@ export class DriveService {
 			}
 		}
 
+		this.maybeEnqueueVideoTranscoding(file);
+
 		return file;
+	}
+
+	/**
+	 * 動画ファイルのアップロード完了時、設定・Capability・サイズ/長さに応じて
+	 * トランスコードジョブを投入する。詳細な skip 判定は Processor 側でも行う。
+	 */
+	@bindThis
+	private maybeEnqueueVideoTranscoding(file: MiDriveFile): void {
+		// リモートファイルは対象外（オリジナルサーバが配信する）
+		if (file.userHost != null) return;
+		if (file.isLink) return;
+		if (!file.type.startsWith('video/')) return;
+		if (!this.meta.enableVideoTranscoding) return;
+
+		const maxFileSize = Number(this.meta.videoTranscodeMaxFileSize);
+		if (maxFileSize > 0 && file.size > maxFileSize) return;
+
+		const duration = file.properties.duration;
+		if (this.meta.videoTranscodeMaxDuration > 0 && duration != null && duration > this.meta.videoTranscodeMaxDuration) return;
+
+		// Capability(libsvtav1/HLS)が無ければ投入しない
+		this.ffmpegCapabilityService.getCapabilities().then(caps => {
+			if (!caps.av1 || !caps.hls) return;
+			this.queueService.createVideoTranscodingJob(file.id);
+		}).catch(err => {
+			this.registerLogger.warn(`Failed to enqueue video transcoding job for ${file.id}`, err as Error);
+		});
 	}
 
 	@bindThis
