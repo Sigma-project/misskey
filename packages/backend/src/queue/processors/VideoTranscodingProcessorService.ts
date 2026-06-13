@@ -86,9 +86,10 @@ export class VideoTranscodingProcessorService {
 		}
 
 		const durationSec = file.properties.duration ?? 0;
-		if (meta.videoTranscodeMaxDuration > 0 && durationSec > meta.videoTranscodeMaxDuration) {
-			await this.markSkipped(file, caps.vvc, startedAt, 'duration exceeds the limit');
-			return 'skip: duration exceeds the limit';
+		// 長さ上限が設定されている場合、duration不明(検証不能) or 超過なら skip
+		if (meta.videoTranscodeMaxDuration > 0 && (file.properties.duration == null || file.properties.duration > meta.videoTranscodeMaxDuration)) {
+			await this.markSkipped(file, caps.vvc, startedAt, 'duration unknown or exceeds the limit');
+			return 'skip: duration unknown or exceeds the limit';
 		}
 
 		if (!caps.av1 || !caps.hls) {

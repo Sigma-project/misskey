@@ -711,8 +711,9 @@ export class DriveService {
 		const maxFileSize = Number(this.meta.videoTranscodeMaxFileSize);
 		if (maxFileSize > 0 && file.size > maxFileSize) return;
 
+		// 長さ上限が設定されている場合、duration が取得できない動画は検証不能のため投入しない
 		const duration = file.properties.duration;
-		if (this.meta.videoTranscodeMaxDuration > 0 && duration != null && duration > this.meta.videoTranscodeMaxDuration) return;
+		if (this.meta.videoTranscodeMaxDuration > 0 && (duration == null || duration > this.meta.videoTranscodeMaxDuration)) return;
 
 		// Capability(libsvtav1/HLS)が無ければ投入しない
 		this.ffmpegCapabilityService.getCapabilities().then(caps => {
