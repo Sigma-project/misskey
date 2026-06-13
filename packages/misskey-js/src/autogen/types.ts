@@ -4798,9 +4798,20 @@ export type components = {
                 orientation?: number;
                 /** @example rgb(40,65,87) */
                 avgColor?: string;
+                /** @example 30.5 */
+                duration?: number;
+                /** @example av1 */
+                videoCodec?: string;
+                /** @example opus */
+                audioCodec?: string;
             };
             /** Format: url */
             url: string;
+            /** Format: url */
+            hlsManifestUrl: string | null;
+            /** Format: url */
+            dashManifestUrl: string | null;
+            transcodingStatus: string | null;
             /** Format: url */
             thumbnailUrl: string | null;
             comment: string | null;
