@@ -110,7 +110,7 @@ SPDX-License-Identifier: AGPL-3.0-only
 </template>
 
 <script lang="ts" setup>
-import { ref, useTemplateRef, computed, watch, onDeactivated, onActivated, onMounted } from 'vue';
+import { ref, useTemplateRef, computed, watch, onDeactivated, onActivated, onMounted, onUnmounted } from 'vue';
 import * as Misskey from 'misskey-js';
 import type { MenuItem } from '@/types/menu.js';
 import type { Keymap } from '@/utility/hotkey.js';
@@ -421,12 +421,16 @@ let stopVideoElWatch: () => void;
 
 // hls.js インスタンス（HLS再生時のみ）
 let hls: { destroy: () => void } | null = null;
+// コンポーネント破棄/非活性後に遅延した dynamic import の attach を防ぐためのフラグ
+let hlsDisposed = false;
 
 // video要素にソースをアタッチする。
 // HLS manifestがあればネイティブHLS or hls.jsで再生し、不可ならオリジナルにフォールバックする。
 async function setupVideoSource(el: HTMLVideoElement) {
 	const manifest = props.video.hlsManifestUrl;
 	if (manifest == null) return; // manifestが無ければ<source>のvideo.urlを使う
+
+	hlsDisposed = false;
 
 	// Safari等: ネイティブHLS
 	if (el.canPlayType('application/vnd.apple.mpegurl') !== '') {
@@ -436,6 +440,8 @@ async function setupVideoSource(el: HTMLVideoElement) {
 
 	try {
 		const { default: Hls } = await import('hls.js');
+		// import 完了までに破棄/非活性化されていたら attach しない（リーク防止）
+		if (hlsDisposed) return;
 		if (Hls.isSupported()) {
 			const instance = new Hls({ enableWorker: true });
 			instance.on(Hls.Events.ERROR, (_event, data) => {
@@ -459,6 +465,7 @@ async function setupVideoSource(el: HTMLVideoElement) {
 }
 
 function teardownHls() {
+	hlsDisposed = true;
 	if (hls) {
 		hls.destroy();
 		hls = null;
@@ -577,6 +584,11 @@ onDeactivated(() => {
 		window.clearTimeout(controlStateTimer);
 		controlStateTimer = null;
 	}
+});
+
+onUnmounted(() => {
+	// KeepAlive外で直接アンマウントされた場合も hls.js を確実に破棄する
+	teardownHls();
 });
 </script>
 
