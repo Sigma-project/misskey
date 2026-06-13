@@ -71,13 +71,17 @@ export class VideoTranscodingProcessorService {
 		if (!file.type.startsWith('video/')) return 'skip: not a video';
 
 		const meta = await this.metaService.fetch();
-		if (!meta.enableVideoTranscoding) return 'skip: transcoding disabled';
-
 		const caps = await this.ffmpegCapabilityService.getCapabilities();
 		const startedAt = Date.now();
 
+		if (!meta.enableVideoTranscoding) {
+			await this.markSkipped(file, caps.vvc, startedAt, 'transcoding disabled');
+			return 'skip: transcoding disabled';
+		}
+
 		const maxFileSize = Number(meta.videoTranscodeMaxFileSize);
 		if (maxFileSize > 0 && file.size > maxFileSize) {
+			await this.markSkipped(file, caps.vvc, startedAt, 'file size exceeds the limit');
 			return 'skip: file size exceeds the limit';
 		}
 
@@ -97,6 +101,10 @@ export class VideoTranscodingProcessorService {
 
 		const [inputPath, cleanupInput] = await createTemp();
 		const [outDir, cleanupOutDir] = await createTempDir();
+
+		const storedInternal = !meta.useObjectStorage;
+		// アップロード済み成果物のストレージ上のプレフィックス（孤児掃除に使う）
+		let storedPrefix: string | null = null;
 
 		try {
 			// --- download ---
@@ -123,17 +131,26 @@ export class VideoTranscodingProcessorService {
 			// --- upload ---
 			await this.publish(file, caps.vvc, startedAt, 'uploading', 0);
 			const rand = crypto.randomBytes(8).toString('hex');
-			const prefix = `stream-${file.id}-${rand}`;
-			const storedInternal = !meta.useObjectStorage;
-			const { hlsUrl, dashUrl } = await this.uploadArtifacts(outDir, prefix, storedInternal, meta, result.hasDash);
+			const logicalPrefix = `stream-${file.id}-${rand}`;
+			const upload = await this.uploadArtifacts(outDir, logicalPrefix, storedInternal, meta, result.hasDash);
+			storedPrefix = upload.storedPrefix;
 			await this.publish(file, caps.vvc, startedAt, 'uploading', 100);
+
+			// --- 協調キャンセル: コミット直前に取り消し/削除を再確認 ---
+			const latest = await this.driveFilesRepository.findOneBy({ id: file.id });
+			if (latest == null || latest.transcodingStatus === 'failed') {
+				// キャンセル済み or ファイル削除済み → アップロード済み成果物を破棄
+				await this.cleanupArtifacts(storedPrefix, storedInternal, meta).catch(() => { /* ignore */ });
+				storedPrefix = null;
+				return 'aborted: cancelled';
+			}
 
 			// --- persist ---
 			await this.driveFilesRepository.update(file.id, {
-				hlsManifestUrl: result.hasHls ? hlsUrl : null,
-				dashManifestUrl: result.hasDash ? dashUrl : null,
+				hlsManifestUrl: result.hasHls ? upload.hlsUrl : null,
+				dashManifestUrl: result.hasDash ? upload.dashUrl : null,
 				transcodingStatus: 'completed',
-				transcodingPrefix: prefix,
+				transcodingPrefix: storedPrefix,
 				transcodingStoredInternal: storedInternal,
 				transcodingVariants: result.variants,
 			});
@@ -142,6 +159,10 @@ export class VideoTranscodingProcessorService {
 			return 'Success';
 		} catch (err) {
 			this.logger.error(`Transcoding failed for ${file.id}`, err as Error);
+			// アップロード済み成果物の孤児化を防ぐ（コミット前に失敗した場合）
+			if (storedPrefix != null) {
+				await this.cleanupArtifacts(storedPrefix, storedInternal, meta).catch(() => { /* ignore */ });
+			}
 			// 最終試行で失敗した場合のみ failed を確定させる
 			const maxAttempts = job.opts.attempts ?? 1;
 			if (job.attemptsMade + 1 >= maxAttempts) {
@@ -156,26 +177,33 @@ export class VideoTranscodingProcessorService {
 	}
 
 	/**
-	 * outDir 配下を再帰的にストレージへアップロードし、master/manifest の公開URLを返す。
+	 * outDir 配下を再帰的にストレージへアップロードし、master/manifest の公開URLと
+	 * クリーンアップ用の storedPrefix を返す。
+	 *
+	 * storedPrefix は削除時に objectStoragePrefix の変更に依存しないよう、保存時の実プレフィックスを返す:
+	 * - 内部ストレージ: 論理 prefix（配信ルート用に `stream-...` のまま）
+	 * - ObjectStorage: objectStoragePrefix を含む実キー prefix
 	 */
 	@bindThis
-	private async uploadArtifacts(outDir: string, prefix: string, storedInternal: boolean, meta: MiMeta, hasDash: boolean): Promise<{ hlsUrl: string; dashUrl: string }> {
+	private async uploadArtifacts(outDir: string, logicalPrefix: string, storedInternal: boolean, meta: MiMeta, hasDash: boolean): Promise<{ hlsUrl: string; dashUrl: string; storedPrefix: string }> {
 		const files = await this.collectFiles(outDir, '');
 
 		if (storedInternal) {
 			for (const rel of files) {
-				this.internalStorageService.saveFromPath(`${prefix}/${rel}`, Path.join(outDir, rel));
+				this.internalStorageService.saveFromPath(`${logicalPrefix}/${rel}`, Path.join(outDir, rel));
 			}
 			return {
-				hlsUrl: `${this.config.url}/transcoded/${prefix}/master.m3u8`,
-				dashUrl: `${this.config.url}/transcoded/${prefix}/manifest.mpd`,
+				hlsUrl: `${this.config.url}/transcoded/${logicalPrefix}/master.m3u8`,
+				dashUrl: `${this.config.url}/transcoded/${logicalPrefix}/manifest.mpd`,
+				storedPrefix: logicalPrefix,
 			};
 		}
 
 		// ObjectStorage
 		const baseUrl = meta.objectStorageBaseUrl
 			?? `${meta.objectStorageUseSSL ? 'https' : 'http'}://${meta.objectStorageEndpoint}${meta.objectStoragePort ? `:${meta.objectStoragePort}` : ''}/${meta.objectStorageBucket}`;
-		const keyBase = (meta.objectStoragePrefix ? `${meta.objectStoragePrefix}/` : '') + `${prefix}/`;
+		const storedPrefix = (meta.objectStoragePrefix ? `${meta.objectStoragePrefix}/` : '') + logicalPrefix;
+		const keyBase = `${storedPrefix}/`;
 
 		for (const rel of files) {
 			const ext = rel.split('.').pop()?.toLowerCase() ?? '';
@@ -197,7 +225,20 @@ export class VideoTranscodingProcessorService {
 		return {
 			hlsUrl: `${baseUrl}/${keyBase}master.m3u8`,
 			dashUrl: `${baseUrl}/${keyBase}manifest.mpd`,
+			storedPrefix,
 		};
+	}
+
+	/**
+	 * アップロード済みのトランスコード成果物を storedPrefix 単位で削除する（失敗/キャンセル時の孤児掃除）。
+	 */
+	@bindThis
+	private async cleanupArtifacts(storedPrefix: string, storedInternal: boolean, meta: MiMeta): Promise<void> {
+		if (storedInternal) {
+			this.internalStorageService.delPrefix(storedPrefix);
+		} else {
+			await this.s3Service.deletePrefix(meta, `${storedPrefix}/`);
+		}
 	}
 
 	/**

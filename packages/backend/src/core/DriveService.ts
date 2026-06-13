@@ -807,9 +807,9 @@ export class DriveService {
 			if (file.transcodingStoredInternal) {
 				this.internalStorageService.delPrefix(file.transcodingPrefix);
 			} else {
-				// S3上のキーは objectStoragePrefix を前置している
-				const s3Prefix = (this.meta.objectStoragePrefix ? `${this.meta.objectStoragePrefix}/` : '') + `${file.transcodingPrefix}/`;
-				await this.s3Service.deletePrefix(this.meta, s3Prefix);
+				// transcodingPrefix には保存時の実キー prefix（objectStoragePrefix込み）を記録しているため、
+				// 現在の objectStoragePrefix に依存せず削除できる
+				await this.s3Service.deletePrefix(this.meta, `${file.transcodingPrefix}/`);
 			}
 		} catch (err) {
 			this.deleteLogger.warn(`Failed to cleanup transcoding artifacts for ${file.id}`, err as Error);
