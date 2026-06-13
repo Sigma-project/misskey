@@ -23,6 +23,11 @@ export const meta = {
 			code: 'NO_SUCH_FILE',
 			id: '9e6e6b7e-4a2b-4f3a-9d2a-1f6b1c6e2a01',
 		},
+		notTranscodable: {
+			message: 'The file is not a local video and cannot be transcoded.',
+			code: 'NOT_TRANSCODABLE',
+			id: 'b3d6f0a2-1c3e-4b8a-8f2c-9a1e2d3c4b50',
+		},
 	},
 } as const;
 
@@ -46,6 +51,10 @@ export default class extends Endpoint<typeof meta, typeof paramDef> { // eslint-
 			const file = await this.driveFilesRepository.findOneBy({ id: ps.fileId });
 			if (file == null) {
 				throw new ApiError(meta.errors.noSuchFile);
+			}
+			// ローカルの動画ファイルのみ再投入対象
+			if (file.userHost != null || file.isLink || !file.type.startsWith('video/')) {
+				throw new ApiError(meta.errors.notTranscodable);
 			}
 
 			// jobId は fileId と一致するため、再投入前に既存ジョブを除去する
