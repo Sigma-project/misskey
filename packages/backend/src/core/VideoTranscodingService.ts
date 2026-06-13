@@ -101,6 +101,7 @@ export class VideoTranscodingService {
 			durationSec: opts.durationSec,
 			audioCodec,
 			copyVideo: opts.sourceVideoCodec === 'av1',
+			maxOutputBytes,
 			onProgress: opts.onProgress,
 		});
 		const av1Variant = await this.collectVariant('av1', opts.outDir, opts.durationSec, audioCodec);
@@ -120,6 +121,7 @@ export class VideoTranscodingService {
 					durationSec: opts.durationSec,
 					audioCodec,
 					copyVideo: false,
+					maxOutputBytes,
 					onProgress: opts.onProgress,
 				});
 				const vvcVariant = await this.collectVariant('vvc', opts.outDir, opts.durationSec, audioCodec);
@@ -173,6 +175,7 @@ export class VideoTranscodingService {
 		durationSec: number;
 		audioCodec: 'libopus' | 'aac';
 		copyVideo: boolean;
+		maxOutputBytes?: number;
 		onProgress?: (p: TranscodeProgress) => void;
 	}): Promise<void> {
 		const codecDir = Path.join(opts.outDir, opts.codec);
@@ -207,6 +210,8 @@ export class VideoTranscodingService {
 				.output(playlistPath);
 
 			let timedOut = false;
+			let exceededSize = false;
+			let sizeCheckInProgress = false;
 			const timer = setTimeout(() => {
 				timedOut = true;
 				command.kill('SIGKILL');
@@ -214,18 +219,32 @@ export class VideoTranscodingService {
 
 			command
 				.on('progress', (progress) => {
-					if (opts.onProgress == null) return;
-					const timemarkSec = this.parseTimemark(progress.timemark);
-					const percent = opts.durationSec > 0
-						? Math.max(0, Math.min(100, (timemarkSec / opts.durationSec) * 100))
-						: (progress.percent ?? 0);
-					opts.onProgress({
-						codec: opts.codec,
-						phase,
-						percent,
-						fps: progress.currentFps,
-						speed: progress.currentKbps != null ? `${progress.currentKbps}kbps` : undefined,
-					});
+					if (opts.onProgress != null) {
+						const timemarkSec = this.parseTimemark(progress.timemark);
+						const percent = opts.durationSec > 0
+							? Math.max(0, Math.min(100, (timemarkSec / opts.durationSec) * 100))
+							: (progress.percent ?? 0);
+						opts.onProgress({
+							codec: opts.codec,
+							phase,
+							percent,
+							fps: progress.currentFps,
+							speed: progress.currentKbps != null ? `${progress.currentKbps}kbps` : undefined,
+						});
+					}
+
+					// 出力サイズ上限を encode 中に監視し、超過したら kill する（暴走/ストレージ枯渇対策）
+					if (opts.maxOutputBytes != null && !sizeCheckInProgress && !exceededSize) {
+						sizeCheckInProgress = true;
+						this.dirSize(opts.outDir).then(size => {
+							if (size > opts.maxOutputBytes!) {
+								exceededSize = true;
+								command.kill('SIGKILL');
+							}
+						}).catch(() => { /* ignore */ }).finally(() => {
+							sizeCheckInProgress = false;
+						});
+					}
 				})
 				.on('end', () => {
 					clearTimeout(timer);
@@ -233,7 +252,9 @@ export class VideoTranscodingService {
 				})
 				.on('error', (err) => {
 					clearTimeout(timer);
-					reject(timedOut ? new Error(`ffmpeg timed out after ${timeoutMs}ms`) : err);
+					if (timedOut) reject(new Error(`ffmpeg timed out after ${timeoutMs}ms`));
+					else if (exceededSize) reject(new Error('Transcoded output exceeded the size limit during encoding'));
+					else reject(err);
 				})
 				.run();
 		});
@@ -357,7 +378,16 @@ export class VideoTranscodingService {
 	@bindThis
 	private probe(filePath: string): Promise<FFmpeg.FfprobeData> {
 		return new Promise((resolve, reject) => {
+			let settled = false;
+			const timer = setTimeout(() => {
+				if (settled) return;
+				settled = true;
+				reject(new Error('ffprobe timed out'));
+			}, 30 * 1000);
 			FFmpeg.ffprobe(filePath, (err, metadata) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
 				if (err) reject(err);
 				else resolve(metadata);
 			});

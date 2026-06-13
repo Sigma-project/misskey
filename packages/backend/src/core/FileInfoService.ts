@@ -410,24 +410,39 @@ export class FileInfoService {
 	private getVideoInfo(path: string): Promise<{ duration?: number; videoCodec?: string; audioCodec?: string }> {
 		const sublogger = this.logger.createSubLogger('ffprobe');
 		return new Promise((resolve) => {
+			let settled = false;
+			const done = (value: { duration?: number; videoCodec?: string; audioCodec?: string }) => {
+				if (settled) return;
+				settled = true;
+				resolve(value);
+			};
+
+			// ffprobe ハング対策の wall-clock タイムアウト
+			const timer = setTimeout(() => {
+				sublogger.warn(`ffprobe timed out. File path: ${path}`);
+				done({});
+			}, 30 * 1000);
+
 			try {
 				FFmpeg.ffprobe(path, (err, metadata) => {
+					clearTimeout(timer);
 					if (err) {
 						sublogger.warn(`Could not probe the video file. File path: ${path}`, err);
-						resolve({});
+						done({});
 						return;
 					}
 					const videoStream = metadata.streams.find((s) => s.codec_type === 'video');
 					const audioStream = metadata.streams.find((s) => s.codec_type === 'audio');
-					resolve({
+					done({
 						duration: typeof metadata.format.duration === 'number' ? metadata.format.duration : undefined,
 						videoCodec: videoStream?.codec_name,
 						audioCodec: audioStream?.codec_name,
 					});
 				});
 			} catch (err) {
+				clearTimeout(timer);
 				sublogger.warn(`Could not probe the video file. File path: ${path}`, err as Error);
-				resolve({});
+				done({});
 			}
 		});
 	}
