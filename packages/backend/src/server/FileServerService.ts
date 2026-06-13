@@ -173,13 +173,22 @@ export class FileServerService {
 			reply.header('Cache-Control', 'max-age=31536000, immutable');
 		}
 
-		// Range対応
+		// Range対応（単一レンジのみ。suffix形式 bytes=-N も扱う）
 		const range = request.headers.range;
 		if (range != null) {
 			const match = /^bytes=(\d*)-(\d*)$/.exec(range);
-			if (match) {
-				const start = match[1] ? parseInt(match[1], 10) : 0;
-				const end = match[2] ? parseInt(match[2], 10) : stat.size - 1;
+			if (match && (match[1] !== '' || match[2] !== '')) {
+				let start: number;
+				let end: number;
+				if (match[1] === '') {
+					// suffix range: 末尾 N バイト
+					const suffixLength = parseInt(match[2], 10);
+					end = stat.size - 1;
+					start = Math.max(0, stat.size - suffixLength);
+				} else {
+					start = parseInt(match[1], 10);
+					end = match[2] !== '' ? parseInt(match[2], 10) : stat.size - 1;
+				}
 				if (Number.isNaN(start) || Number.isNaN(end) || start > end || end >= stat.size) {
 					reply.code(416);
 					reply.header('Content-Range', `bytes */${stat.size}`);
