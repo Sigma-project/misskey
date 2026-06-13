@@ -47,6 +47,7 @@
 		"execa": "9.6.1",
 		"exifreader": "4.36.1",
 		"frontend-shared": "workspace:*",
+		"hls.js": "1.5.20",
 		"i18n": "workspace:*",
 		"icons-subsetter": "workspace:*",
 		"idb-keyval": "6.2.2",

@@ -38,7 +38,7 @@ SPDX-License-Identifier: AGPL-3.0-only
 			controls
 			@keydown.prevent
 		>
-			<source :src="video.url">
+			<source v-if="!video.hlsManifestUrl" :src="video.url">
 		</video>
 		<i class="ti ti-eye-off" :class="$style.hide" @click="hide = true"></i>
 		<div :class="$style.indicators">
@@ -59,7 +59,7 @@ SPDX-License-Identifier: AGPL-3.0-only
 			@keydown.prevent
 			@click.self="togglePlayPause"
 		>
-			<source :src="video.url">
+			<source v-if="!video.hlsManifestUrl" :src="video.url">
 		</video>
 		<button v-if="isReady && !isPlaying" class="_button" :class="$style.videoOverlayPlayButton" @click="togglePlayPause"><i class="ti ti-player-play-filled"></i></button>
 		<div v-else-if="!isActuallyPlaying" :class="$style.videoLoading">
@@ -419,6 +419,52 @@ let onceInit = false;
 let mediaTickFrameId: number | null = null;
 let stopVideoElWatch: () => void;
 
+// hls.js インスタンス（HLS再生時のみ）
+let hls: { destroy: () => void } | null = null;
+
+// video要素にソースをアタッチする。
+// HLS manifestがあればネイティブHLS or hls.jsで再生し、不可ならオリジナルにフォールバックする。
+async function setupVideoSource(el: HTMLVideoElement) {
+	const manifest = props.video.hlsManifestUrl;
+	if (manifest == null) return; // manifestが無ければ<source>のvideo.urlを使う
+
+	// Safari等: ネイティブHLS
+	if (el.canPlayType('application/vnd.apple.mpegurl') !== '') {
+		el.src = manifest;
+		return;
+	}
+
+	try {
+		const { default: Hls } = await import('hls.js');
+		if (Hls.isSupported()) {
+			const instance = new Hls({ enableWorker: true });
+			instance.on(Hls.Events.ERROR, (_event, data) => {
+				// 致命的エラー時はオリジナル動画にフォールバック
+				if (data.fatal) {
+					instance.destroy();
+					if (hls === instance) hls = null;
+					el.src = props.video.url;
+				}
+			});
+			instance.loadSource(manifest);
+			instance.attachMedia(el);
+			hls = instance;
+		} else {
+			// hls.js自体が非対応の環境はオリジナルにフォールバック
+			el.src = props.video.url;
+		}
+	} catch {
+		el.src = props.video.url;
+	}
+}
+
+function teardownHls() {
+	if (hls) {
+		hls.destroy();
+		hls = null;
+	}
+}
+
 function init() {
 	if (onceInit) return;
 	onceInit = true;
@@ -426,6 +472,8 @@ function init() {
 	stopVideoElWatch = watch(videoEl, () => {
 		if (videoEl.value) {
 			isReady.value = true;
+
+				setupVideoSource(videoEl.value);
 
 			function updateMediaTick() {
 				if (videoEl.value) {
@@ -519,6 +567,7 @@ onDeactivated(() => {
 	bufferedEnd.value = 0;
 	hide.value = (prefer.s.nsfw === 'force' || prefer.s.dataSaver.media) ? true : (props.video.isSensitive && prefer.s.nsfw !== 'ignore');
 	stopVideoElWatch();
+	teardownHls();
 	onceInit = false;
 	if (mediaTickFrameId) {
 		window.cancelAnimationFrame(mediaTickFrameId);
