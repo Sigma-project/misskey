@@ -21,6 +21,8 @@ const THROTTLE_MS = 1000;
 export class VideoTranscodingProgressService {
 	// 同一ファイルの publish 間隔をスロットリングするための最終 publish 時刻（プロセスローカル）
 	private lastPublishedAt = new Map<string, number>();
+	// 終端に達した fileId とその時刻（終端後に遅延到着した非終端 progress を破棄するため）
+	private terminalAt = new Map<string, number>();
 
 	constructor(
 		@Inject(DI.redis)
@@ -38,6 +40,17 @@ export class VideoTranscodingProgressService {
 		return phase === 'done' || phase === 'failed' || phase === 'skipped';
 	}
 
+	// 終端マーカーを記録しつつ、古いエントリを掃除して無制限な増加を防ぐ
+	private markTerminal(fileId: string): void {
+		const now = Date.now();
+		this.terminalAt.set(fileId, now);
+		if (this.terminalAt.size > 1000) {
+			for (const [id, at] of this.terminalAt) {
+				if (now - at > 5 * 60 * 1000) this.terminalAt.delete(id);
+			}
+		}
+	}
+
 	/**
 	 * 進捗を Redis スナップショットへ保存しつつ WebSocket で配信する。
 	 * 終端フェーズと force 指定以外は最短 1 秒間隔にスロットリングする。
@@ -45,6 +58,16 @@ export class VideoTranscodingProgressService {
 	@bindThis
 	public async publishProgress(payload: VideoTranscodingProgress, opts?: { force?: boolean }): Promise<void> {
 		const terminal = this.isTerminal(payload.phase);
+
+		// 新ジョブ開始(queued)で終端マーカーをクリアする（retry/再トランスコード対応）
+		if (payload.phase === 'queued') {
+			this.terminalAt.delete(payload.fileId);
+		} else if (!terminal && this.terminalAt.has(payload.fileId)) {
+			// 既に終端に達したファイルへ遅延到着した非終端 progress は破棄
+			// （index への再追加で完了済みジョブが active に戻るのを防ぐ）
+			return;
+		}
+
 		const last = this.lastPublishedAt.get(payload.fileId) ?? 0;
 		if (!terminal && !opts?.force && payload.updatedAt - last < THROTTLE_MS) {
 			return;
@@ -57,6 +80,7 @@ export class VideoTranscodingProgressService {
 			await this.redisClient.set(key, JSON.stringify(payload), 'EX', TERMINAL_TTL);
 			await this.redisClient.srem(INDEX_KEY, payload.fileId);
 			this.lastPublishedAt.delete(payload.fileId);
+			this.markTerminal(payload.fileId);
 		} else {
 			await this.redisClient.set(key, JSON.stringify(payload), 'EX', ACTIVE_TTL);
 			await this.redisClient.sadd(INDEX_KEY, payload.fileId);
@@ -106,5 +130,6 @@ export class VideoTranscodingProgressService {
 		await this.redisClient.del(this.activeKey(fileId));
 		await this.redisClient.srem(INDEX_KEY, fileId);
 		this.lastPublishedAt.delete(fileId);
+		this.terminalAt.delete(fileId);
 	}
 }
