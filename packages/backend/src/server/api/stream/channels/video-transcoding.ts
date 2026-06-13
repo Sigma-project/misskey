@@ -31,7 +31,7 @@ export class VideoTranscodingChannel extends Channel {
 		// Connection 側の kind チェックはトークン認証時のみ効くため、
 		// セッション認証でも漏れないようチャンネル側でモデレーター権限を明示的に検証する。
 		// （本チャンネルは全体ブロードキャストを購読するため、ユーザー別チャンネルと違い権限バイパスが情報漏洩に直結する）
-		const isModerator = await this.roleService.isModerator(this.user);
+		const isModerator = await this.roleService.isModerator(this.user ?? null);
 		if (!isModerator) return;
 
 		this.subscriber.on('videoTranscodingStream', this.onEvent);
