@@ -751,6 +751,28 @@ export class DriveService {
 		});
 	}
 
+	/**
+	 * トランスコード成果物（HLS/DASHのプレフィックス配下）を削除する。
+	 * 成果物の保存先は transcodingStoredInternal で記録しているため、それに従って削除する。
+	 * （オリジナルファイルの storedInternal とは独立）
+	 */
+	@bindThis
+	private async cleanupTranscodingArtifacts(file: MiDriveFile): Promise<void> {
+		if (file.transcodingPrefix == null) return;
+
+		try {
+			if (file.transcodingStoredInternal) {
+				this.internalStorageService.delPrefix(file.transcodingPrefix);
+			} else {
+				// S3上のキーは objectStoragePrefix を前置している
+				const s3Prefix = (this.meta.objectStoragePrefix ? `${this.meta.objectStoragePrefix}/` : '') + `${file.transcodingPrefix}/`;
+				await this.s3Service.deletePrefix(this.meta, s3Prefix);
+			}
+		} catch (err) {
+			this.deleteLogger.warn(`Failed to cleanup transcoding artifacts for ${file.id}`, err as Error);
+		}
+	}
+
 	@bindThis
 	public async deleteFile(file: MiDriveFile, isExpired = false, deleter?: MiUser) {
 		if (file.storedInternal) {
@@ -774,6 +796,8 @@ export class DriveService {
 				this.queueService.createDeleteObjectStorageFileJob(file.webpublicAccessKey!);
 			}
 		}
+
+		void this.cleanupTranscodingArtifacts(file);
 
 		this.deletePostProcess(file, isExpired, deleter);
 	}
@@ -805,6 +829,8 @@ export class DriveService {
 
 			await Promise.all(promises);
 		}
+
+		await this.cleanupTranscodingArtifacts(file);
 
 		await this.deletePostProcess(file, isExpired, deleter);
 	}
