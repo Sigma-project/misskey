@@ -34,6 +34,12 @@ export type FileInfo = {
 	height?: number;
 	orientation?: number;
 	blurhash?: string;
+	/** 動画の長さ（秒）。動画ファイルのみ */
+	duration?: number;
+	/** 動画ストリームのコーデック名（例: av1, h264）。動画ファイルのみ */
+	videoCodec?: string;
+	/** 音声ストリームのコーデック名（例: opus, aac）。動画ファイルのみ */
+	audioCodec?: string;
 	sensitive: boolean;
 	porn: boolean;
 	warnings: string[];
@@ -156,6 +162,18 @@ export class FileInfoService {
 			});
 		}
 
+		// video duration / codecs
+		let duration: number | undefined;
+		let videoCodec: string | undefined;
+		let audioCodec: string | undefined;
+
+		if (type.mime.startsWith('video/')) {
+			const videoInfo = await this.getVideoInfo(path);
+			duration = videoInfo.duration;
+			videoCodec = videoInfo.videoCodec;
+			audioCodec = videoInfo.audioCodec;
+		}
+
 		let sensitive = false;
 		let porn = false;
 
@@ -181,6 +199,9 @@ export class FileInfoService {
 			height,
 			orientation,
 			blurhash,
+			duration,
+			videoCodec,
+			audioCodec,
 			sensitive,
 			porn,
 			warnings,
@@ -375,6 +396,38 @@ export class FileInfoService {
 			} catch (err) {
 				sublogger.warn(`Could not check the video file. Returns true. File path: ${path}`, err as Error);
 				resolve(true);
+			}
+		});
+	}
+
+	/**
+	 * 動画ファイルの長さ・コーデックを取得する
+	 * （エラー時は空オブジェクトを返し、呼び出し側の処理を止めない）
+	 *
+	 * @param path ファイルパス
+	 */
+	@bindThis
+	private getVideoInfo(path: string): Promise<{ duration?: number; videoCodec?: string; audioCodec?: string }> {
+		const sublogger = this.logger.createSubLogger('ffprobe');
+		return new Promise((resolve) => {
+			try {
+				FFmpeg.ffprobe(path, (err, metadata) => {
+					if (err) {
+						sublogger.warn(`Could not probe the video file. File path: ${path}`, err);
+						resolve({});
+						return;
+					}
+					const videoStream = metadata.streams.find((s) => s.codec_type === 'video');
+					const audioStream = metadata.streams.find((s) => s.codec_type === 'audio');
+					resolve({
+						duration: typeof metadata.format.duration === 'number' ? metadata.format.duration : undefined,
+						videoCodec: videoStream?.codec_name,
+						audioCodec: audioStream?.codec_name,
+					});
+				});
+			} catch (err) {
+				sublogger.warn(`Could not probe the video file. File path: ${path}`, err as Error);
+				resolve({});
 			}
 		});
 	}
