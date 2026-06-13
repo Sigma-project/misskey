@@ -1,0 +1,71 @@
+name: Setup libvips
+description: Install libvips from source with caching
+
+inputs:
+  vips-version:
+    description: libvips version to install
+    required: false
+    default: '8.18.0'
+
+runs:
+  using: composite
+  steps:
+    - name: Restore libvips cache
+      id: cache-libvips
+      uses: actions/cache@v4
+      with:
+        path: /tmp/libvips-destdir
+        key: libvips-v4-${{ inputs.vips-version }}-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Install libvips dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libglib2.0-dev \
+          libexpat1-dev \
+          libjpeg-turbo8-dev \
+          libpng-dev \
+          libwebp-dev \
+          libtiff-dev \
+          libexif-dev \
+          liblcms2-dev \
+          libcgif-dev \
+          libjxl-dev \
+          libheif-dev \
+          libfftw3-dev \
+          liborc-dev \
+          libspng-dev \
+          libarchive-dev \
+          libhwy-dev \
+          librsvg2-dev
+
+    - name: Install libvips build tools
+      if: steps.cache-libvips.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        sudo apt-get install -y \
+          build-essential \
+          ninja-build \
+          meson \
+          pkg-config
+
+    - name: Build libvips from source
+      if: steps.cache-libvips.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        cd /tmp
+        curl -sL https://github.com/libvips/libvips/releases/download/v${{ inputs.vips-version }}/vips-${{ inputs.vips-version }}.tar.xz -o vips.tar.xz
+        tar xf vips.tar.xz
+        cd vips-${{ inputs.vips-version }}
+        meson setup build --prefix=/usr/local --libdir=lib --buildtype=release -Dintrospection=disabled -Djpeg-xl=enabled
+        cd build
+        meson compile
+        DESTDIR=/tmp/libvips-destdir meson install
+
+    - name: Install libvips
+      shell: bash
+      run: |
+        sudo cp -a /tmp/libvips-destdir/usr/local/. /usr/local/
+        sudo ldconfig
+        pkg-config --modversion vips-cpp

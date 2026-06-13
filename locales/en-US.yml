@@ -887,6 +887,7 @@ expiration: "Deadline"
 startingperiod: "Start"
 memo: "Memo"
 priority: "Priority"
+highest: "Highest"
 high: "High"
 middle: "Medium"
 low: "Low"
@@ -1449,10 +1450,12 @@ _imageFrameEditor:
   failedToLoadImage: "Failed to load image"
 _compression:
   _quality:
+    highest: "Highest quality"
     high: "High quality"
     medium: "Medium quality"
     low: "Low quality"
   _size:
+    largest: "Largest size"
     large: "Large size"
     medium: "Medium size"
     small: "Small size"

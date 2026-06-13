@@ -30,12 +30,6 @@ jobs:
   unit:
     name: Unit tests (backend)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version-file:
-          - .node-version
-          - .github/min.node-version
-
     services:
       postgres:
         image: postgres:18
@@ -92,18 +86,16 @@ jobs:
             exit 1
           fi
         done
-    - name: Use Node.js
-      uses: actions/setup-node@v6.1.0
-      with:
-        node-version-file: ${{ matrix.node-version-file }}
-        cache: 'pnpm'
-    - run: pnpm i --frozen-lockfile
-    - name: Check pnpm-lock.yaml
-      run: git diff --exit-code pnpm-lock.yaml
+    - name: Setup libvips
+      uses: ./.github/actions/setup-libvips
+    - name: Setup mise
+      uses: jdx/mise-action@v2
     - name: Copy Configure
       run: cp .github/misskey/test.yml .config
     - name: Build
-      run: pnpm build
+      run: mise run build
+    - name: Check pnpm-lock.yaml
+      run: git diff --exit-code pnpm-lock.yaml
     - name: Test
       run: pnpm --filter backend test-and-coverage
     - name: Upload to Codecov
@@ -115,13 +107,6 @@ jobs:
   e2e:
     name: E2E tests (backend)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version-file:
-          - .node-version
-          - .github/min.node-version
-
     services:
       postgres:
         image: postgres:18
@@ -141,18 +126,16 @@ jobs:
           submodules: true
       - name: Setup pnpm
         uses: pnpm/action-setup@v4.2.0
-      - name: Use Node.js
-        uses: actions/setup-node@v6.1.0
-        with:
-          node-version-file: ${{ matrix.node-version-file }}
-          cache: 'pnpm'
-      - run: pnpm i --frozen-lockfile
-      - name: Check pnpm-lock.yaml
-        run: git diff --exit-code pnpm-lock.yaml
+      - name: Setup libvips
+        uses: ./.github/actions/setup-libvips
+      - name: Setup mise
+        uses: jdx/mise-action@v2
       - name: Copy Configure
         run: cp .github/misskey/test.yml .config
       - name: Build
-        run: pnpm build
+        run: mise run build
+      - name: Check pnpm-lock.yaml
+        run: git diff --exit-code pnpm-lock.yaml
       - name: Test
         run: pnpm --filter backend test-and-coverage:e2e
       - name: Upload to Codecov
@@ -164,12 +147,6 @@ jobs:
   migration:
     name: Migration tests (backend)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version-file:
-          - .node-version
-          #- .github/min.node-version
-
     services:
       postgres:
         image: postgres:18
@@ -185,21 +162,16 @@ jobs:
           submodules: true
       - name: Setup pnpm
         uses: pnpm/action-setup@v4.2.0
-      - name: Get current date
-        id: current-date
-        run: echo "today=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
-      - name: Use Node.js
-        uses: actions/setup-node@v6.1.0
-        with:
-          node-version-file: ${{ matrix.node-version-file }}
-          cache: 'pnpm'
-      - run: pnpm i --frozen-lockfile
-      - name: Check pnpm-lock.yaml
-        run: git diff --exit-code pnpm-lock.yaml
+      - name: Setup libvips
+        uses: ./.github/actions/setup-libvips
+      - name: Setup mise
+        uses: jdx/mise-action@v2
       - name: Copy Configure
         run: cp .github/misskey/test.yml .config
       - name: Build
-        run: pnpm build
+        run: mise run build
+      - name: Check pnpm-lock.yaml
+        run: git diff --exit-code pnpm-lock.yaml
       - name: Run migrations
         run: MISSKEY_CONFIG_YML=test.yml pnpm --filter backend migrate
       - name: Check no migrations are remaining

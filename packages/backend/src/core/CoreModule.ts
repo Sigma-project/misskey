@@ -82,6 +82,7 @@ import { ChatService } from './ChatService.js';
 import { RegistryApiService } from './RegistryApiService.js';
 import { ReversiService } from './ReversiService.js';
 import { PageService } from './PageService.js';
+import { WasmVipsService } from './WasmVipsService.js';
 
 import { ChartLoggerService } from './chart/ChartLoggerService.js';
 import FederationChart from './chart/charts/federation.js';
@@ -235,6 +236,7 @@ const $ChatService: Provider = { provide: 'ChatService', useExisting: ChatServic
 const $RegistryApiService: Provider = { provide: 'RegistryApiService', useExisting: RegistryApiService };
 const $ReversiService: Provider = { provide: 'ReversiService', useExisting: ReversiService };
 const $PageService: Provider = { provide: 'PageService', useExisting: PageService };
+const $WasmVipsService: Provider = { provide: 'WasmVipsService', useExisting: WasmVipsService };
 
 const $ChartLoggerService: Provider = { provide: 'ChartLoggerService', useExisting: ChartLoggerService };
 const $FederationChart: Provider = { provide: 'FederationChart', useExisting: FederationChart };
@@ -391,6 +393,7 @@ const $ApQuestionService: Provider = { provide: 'ApQuestionService', useExisting
 		RegistryApiService,
 		ReversiService,
 		PageService,
+		WasmVipsService,
 
 		ChartLoggerService,
 		FederationChart,
@@ -544,6 +547,7 @@ const $ApQuestionService: Provider = { provide: 'ApQuestionService', useExisting
 		$RegistryApiService,
 		$ReversiService,
 		$PageService,
+		$WasmVipsService,
 
 		$ChartLoggerService,
 		$FederationChart,
@@ -697,6 +701,7 @@ const $ApQuestionService: Provider = { provide: 'ApQuestionService', useExisting
 		RegistryApiService,
 		ReversiService,
 		PageService,
+		WasmVipsService,
 
 		FederationChart,
 		NotesChart,
@@ -848,6 +853,7 @@ const $ApQuestionService: Provider = { provide: 'ApQuestionService', useExisting
 		$RegistryApiService,
 		$ReversiService,
 		$PageService,
+		$WasmVipsService,
 
 		$FederationChart,
 		$NotesChart,

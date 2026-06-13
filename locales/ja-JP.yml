@@ -888,6 +888,7 @@ expiration: "期限"
 startingperiod: "開始期間"
 memo: "メモ"
 priority: "優先度"
+highest: "最高"
 high: "高"
 middle: "中"
 low: "低"
@@ -1453,10 +1454,12 @@ _imageFrameEditor:
 
 _compression:
   _quality:
+    highest: "最高品質"
     high: "高品質"
     medium: "中品質"
     low: "低品質"
   _size:
+    largest: "サイズ最大"
     large: "サイズ大"
     medium: "サイズ中"
     small: "サイズ小"

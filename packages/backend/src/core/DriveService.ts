@@ -25,6 +25,7 @@ import { GlobalEventService } from '@/core/GlobalEventService.js';
 import { VideoProcessingService } from '@/core/VideoProcessingService.js';
 import { ImageProcessingService } from '@/core/ImageProcessingService.js';
 import type { IImage } from '@/core/ImageProcessingService.js';
+import { WasmVipsService } from '@/core/WasmVipsService.js';
 import { QueueService } from '@/core/QueueService.js';
 import { FFmpegCapabilityService } from '@/core/FFmpegCapabilityService.js';
 import type { MiDriveFolder } from '@/models/DriveFolder.js';
@@ -123,6 +124,7 @@ export class DriveService {
 		private internalStorageService: InternalStorageService,
 		private s3Service: S3Service,
 		private imageProcessingService: ImageProcessingService,
+		private wasmVipsService: WasmVipsService,
 		private videoProcessingService: VideoProcessingService,
 		private globalEventService: GlobalEventService,
 		private queueService: QueueService,
@@ -161,6 +163,7 @@ export class DriveService {
 				if (type === 'image/png') ext = '.png';
 				if (type === 'image/webp') ext = '.webp';
 				if (type === 'image/avif') ext = '.avif';
+				if (type === 'image/jxl') ext = '.jxl';
 				if (type === 'image/apng') ext = '.apng';
 				if (type === 'image/vnd.mozilla.apng') ext = '.apng';
 			}
@@ -313,10 +316,10 @@ export class DriveService {
 
 			satisfyWebpublic = !!(
 				type !== 'image/svg+xml' && // security reason
-				type !== 'image/avif' && // not supported by Mastodon and MS Edge
+				!['image/jpeg', 'image/webp', 'image/avif', 'image/png', 'image/bmp'].includes(type) && // needs JXL conversion
 			!(metadata.exif ?? metadata.iptc ?? metadata.xmp ?? metadata.tifftagPhotoshop) &&
-			metadata.width && metadata.width <= 2048 &&
-			metadata.height && metadata.height <= 2048
+				metadata.width && metadata.width <= 11648 &&
+				metadata.height && metadata.height <= 11648
 			);
 		} catch (err) {
 			this.registerLogger.warn(`sharp failed: ${err}`);
@@ -333,10 +336,9 @@ export class DriveService {
 			this.registerLogger.info('creating web image');
 
 			try {
-				if (['image/jpeg', 'image/webp', 'image/avif'].includes(type)) {
-					webpublic = await this.imageProcessingService.convertSharpToWebp(img, 2048, 2048);
-				} else if (['image/png', 'image/bmp', 'image/svg+xml'].includes(type)) {
-					webpublic = await this.imageProcessingService.convertSharpToPng(img, 2048, 2048);
+				if (['image/jpeg', 'image/webp', 'image/avif', 'image/jxl', 'image/png', 'image/bmp', 'image/svg+xml'].includes(type)) {
+					// jxlDefaultはロスレス設定なのでpng/bmp/svg由来でも画質は劣化しない
+					webpublic = await this.imageProcessingService.convertSharpToJxl(img, 11648, 11648);
 				} else {
 					this.registerLogger.debug('web image not created (not an required image)');
 				}
@@ -355,9 +357,10 @@ export class DriveService {
 
 		try {
 			if (isAnimated) {
-				thumbnail = await this.imageProcessingService.convertSharpToWebp(sharp(path, { animated: true }), 374, 317, { alphaQuality: 70 });
+				const inputBuffer = await fs.promises.readFile(path);
+				thumbnail = await this.wasmVipsService.convertAnimatedToJxl(inputBuffer, 374, 317, { quality: 100, lossless: true, effort: 9, distance: 0 });
 			} else {
-				thumbnail = await this.imageProcessingService.convertSharpToWebp(img, 498, 422);
+				thumbnail = await this.imageProcessingService.convertSharpToJxl(img, 498, 422);
 			}
 		} catch (err) {
 			this.registerLogger.warn('thumbnail not created (an error occurred)', err as Error);

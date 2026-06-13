@@ -3565,6 +3565,10 @@ export interface Locale extends ILocale {
      */
     "priority": string;
     /**
+     * 最高
+     */
+    "highest": string;
+    /**
      * 高
      */
     "high": string;
@@ -5804,6 +5808,10 @@ export interface Locale extends ILocale {
     "_compression": {
         "_quality": {
             /**
+             * 最高品質
+             */
+            "highest": string;
+            /**
              * 高品質
              */
             "high": string;
@@ -5817,6 +5825,10 @@ export interface Locale extends ILocale {
             "low": string;
         };
         "_size": {
+            /**
+             * サイズ最大
+             */
+            "largest": string;
             /**
              * サイズ大
              */

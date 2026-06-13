@@ -38,7 +38,7 @@ export const Default = {
 		};
 	},
 	args: {
-		imageFile: new File([], 'image.webp', { type: 'image/webp' }),
+		imageFile: new File([], 'image.jxl', { type: 'image/jxl' }),
 		aspectRatio: NaN,
 	},
 	parameters: {
@@ -50,7 +50,7 @@ export const Default = {
 		msw: {
 			handlers: [
 				...commonHandlers,
-				http.get('/proxy/image.webp', async ({ request }) => {
+				http.get('/proxy/image.jxl', async ({ request }) => {
 					const url = new URL(request.url).searchParams.get('url');
 					if (url === 'https://github.com/misskey-dev/misskey/blob/master/packages/frontend/assets/fedi.jpg?raw=true') {
 						const image = await (await window.fetch('client-assets/fedi.jpg')).blob();
