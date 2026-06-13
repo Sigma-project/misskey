@@ -13,7 +13,7 @@ import { NodeHttpHandler, NodeHttpHandlerOptions } from '@smithy/node-http-handl
 import type { MiMeta } from '@/models/Meta.js';
 import { HttpRequestService } from '@/core/HttpRequestService.js';
 import { bindThis } from '@/decorators.js';
-import type { DeleteObjectCommandInput, PutObjectCommandInput } from '@aws-sdk/client-s3';
+import type { DeleteObjectCommandInput, PutObjectCommandInput, ListObjectsV2CommandOutput } from '@aws-sdk/client-s3';
 
 @Injectable()
 export class S3Service {
@@ -80,7 +80,7 @@ export class S3Service {
 		let continuationToken: string | undefined = undefined;
 
 		do {
-			const listed = await client.send(new ListObjectsV2Command({
+			const listed: ListObjectsV2CommandOutput = await client.send(new ListObjectsV2Command({
 				Bucket: bucket,
 				Prefix: prefix,
 				ContinuationToken: continuationToken,
