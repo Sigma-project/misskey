@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 
+import { In } from 'typeorm';
 import { Inject, Injectable } from '@nestjs/common';
 import { Endpoint } from '@/server/api/endpoint-base.js';
 import { DI } from '@/di-symbols.js';
@@ -44,7 +45,12 @@ export default class extends Endpoint<typeof meta, typeof paramDef> { // eslint-
 			}
 
 			await this.videoTranscodingProgressService.remove(ps.fileId);
-			await this.driveFilesRepository.update(ps.fileId, { transcodingStatus: 'failed' });
+			// pending/processing のジョブのみキャンセルし、既に completed/skipped のものは上書きしない
+			// （完了直後のキャンセルで成果物URLを残したまま failed に壊すのを防ぐ）
+			await this.driveFilesRepository.update(
+				{ id: ps.fileId, transcodingStatus: In(['pending', 'processing']) },
+				{ transcodingStatus: 'failed' },
+			);
 		});
 	}
 }
