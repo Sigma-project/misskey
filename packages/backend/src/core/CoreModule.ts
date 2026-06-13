@@ -71,6 +71,7 @@ import { UserWebhookService } from './UserWebhookService.js';
 import { UtilityService } from './UtilityService.js';
 import { FileInfoService } from './FileInfoService.js';
 import { FFmpegCapabilityService } from './FFmpegCapabilityService.js';
+import { VideoTranscodingProgressService } from './VideoTranscodingProgressService.js';
 import { SearchService } from './SearchService.js';
 import { ClipService } from './ClipService.js';
 import { FeaturedService } from './FeaturedService.js';
@@ -219,6 +220,7 @@ const $WebhookTestService: Provider = { provide: 'WebhookTestService', useExisti
 const $UtilityService: Provider = { provide: 'UtilityService', useExisting: UtilityService };
 const $FileInfoService: Provider = { provide: 'FileInfoService', useExisting: FileInfoService };
 const $FFmpegCapabilityService: Provider = { provide: 'FFmpegCapabilityService', useExisting: FFmpegCapabilityService };
+const $VideoTranscodingProgressService: Provider = { provide: 'VideoTranscodingProgressService', useExisting: VideoTranscodingProgressService };
 const $FlashService: Provider = { provide: 'FlashService', useExisting: FlashService };
 const $SearchService: Provider = { provide: 'SearchService', useExisting: SearchService };
 const $ClipService: Provider = { provide: 'ClipService', useExisting: ClipService };
@@ -373,6 +375,7 @@ const $ApQuestionService: Provider = { provide: 'ApQuestionService', useExisting
 		UtilityService,
 		FileInfoService,
 		FFmpegCapabilityService,
+		VideoTranscodingProgressService,
 		FlashService,
 		SearchService,
 		ClipService,
@@ -524,6 +527,7 @@ const $ApQuestionService: Provider = { provide: 'ApQuestionService', useExisting
 		$UtilityService,
 		$FileInfoService,
 		$FFmpegCapabilityService,
+		$VideoTranscodingProgressService,
 		$FlashService,
 		$SearchService,
 		$ClipService,
@@ -675,6 +679,7 @@ const $ApQuestionService: Provider = { provide: 'ApQuestionService', useExisting
 		UtilityService,
 		FileInfoService,
 		FFmpegCapabilityService,
+		VideoTranscodingProgressService,
 		FlashService,
 		SearchService,
 		ClipService,
@@ -825,6 +830,7 @@ const $ApQuestionService: Provider = { provide: 'ApQuestionService', useExisting
 		$UtilityService,
 		$FileInfoService,
 		$FFmpegCapabilityService,
+		$VideoTranscodingProgressService,
 		$SearchService,
 		$ClipService,
 		$FeaturedService,
