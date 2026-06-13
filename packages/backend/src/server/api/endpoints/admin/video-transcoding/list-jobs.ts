@@ -8,6 +8,7 @@ import { Endpoint } from '@/server/api/endpoint-base.js';
 import { DI } from '@/di-symbols.js';
 import type { DriveFilesRepository } from '@/models/_.js';
 import { VideoTranscodingProgressService } from '@/core/VideoTranscodingProgressService.js';
+import { FFmpegCapabilityService } from '@/core/FFmpegCapabilityService.js';
 
 export const meta = {
 	tags: ['admin'],
@@ -20,6 +21,17 @@ export const meta = {
 		type: 'object',
 		optional: false, nullable: false,
 		properties: {
+			capabilities: {
+				type: 'object',
+				optional: false, nullable: false,
+				properties: {
+					av1: { type: 'boolean', optional: false, nullable: false },
+					vvc: { type: 'boolean', optional: false, nullable: false },
+					opus: { type: 'boolean', optional: false, nullable: false },
+					hls: { type: 'boolean', optional: false, nullable: false },
+					dash: { type: 'boolean', optional: false, nullable: false },
+				},
+			},
 			active: {
 				type: 'array',
 				optional: false, nullable: false,
@@ -60,8 +72,10 @@ export default class extends Endpoint<typeof meta, typeof paramDef> { // eslint-
 		private driveFilesRepository: DriveFilesRepository,
 
 		private videoTranscodingProgressService: VideoTranscodingProgressService,
+		private ffmpegCapabilityService: FFmpegCapabilityService,
 	) {
 		super(meta, paramDef, async (ps, me) => {
+			const capabilities = await this.ffmpegCapabilityService.getCapabilities();
 			const active = await this.videoTranscodingProgressService.listActive();
 
 			const failedFiles = await this.driveFilesRepository.createQueryBuilder('file')
@@ -76,7 +90,7 @@ export default class extends Endpoint<typeof meta, typeof paramDef> { // eslint-
 				userId: file.userId,
 			}));
 
-			return { active, failed };
+			return { capabilities, active, failed };
 		});
 	}
 }
