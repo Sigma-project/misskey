@@ -35,8 +35,9 @@ const CONTENT_TYPES: Record<string, string> = {
 };
 
 // overallPercent のフェーズ別重み付け
-const WEIGHTS_WITH_VVC = { downloading: 5, probing: 2, 'encoding-av1': 50, 'encoding-vvc': 35, uploading: 8 };
-const WEIGHTS_WITHOUT_VVC = { downloading: 5, probing: 2, 'encoding-av1': 85, 'encoding-vvc': 0, uploading: 8 };
+// probing は別フェーズとして publish しない（duration/codec取得はアップロード時に済んでいる）ため downloading に含める
+const WEIGHTS_WITH_VVC = { downloading: 7, 'encoding-av1': 50, 'encoding-vvc': 35, uploading: 8 };
+const WEIGHTS_WITHOUT_VVC = { downloading: 7, 'encoding-av1': 85, 'encoding-vvc': 0, uploading: 8 };
 
 @Injectable()
 export class VideoTranscodingProcessorService {
@@ -322,7 +323,7 @@ export class VideoTranscodingProcessorService {
 		if (phase === 'skipped' || phase === 'failed') return 0;
 
 		const weights = vvcAvailable ? WEIGHTS_WITH_VVC : WEIGHTS_WITHOUT_VVC;
-		const order: (keyof typeof weights)[] = ['downloading', 'probing', 'encoding-av1', 'encoding-vvc', 'uploading'];
+		const order: (keyof typeof weights)[] = ['downloading', 'encoding-av1', 'encoding-vvc', 'uploading'];
 
 		// queued は 0
 		if (phase === 'queued') return 0;
