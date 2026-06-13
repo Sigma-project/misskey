@@ -70,12 +70,41 @@ export const packedDriveFileSchema = {
 					optional: true, nullable: false,
 					example: 'rgb(40,65,87)',
 				},
+				duration: {
+					type: 'number',
+					optional: true, nullable: false,
+					example: 30.5,
+				},
+				videoCodec: {
+					type: 'string',
+					optional: true, nullable: false,
+					example: 'av1',
+				},
+				audioCodec: {
+					type: 'string',
+					optional: true, nullable: false,
+					example: 'opus',
+				},
 			},
 		},
 		url: {
 			type: 'string',
 			optional: false, nullable: false,
 			format: 'url',
+		},
+		hlsManifestUrl: {
+			type: 'string',
+			optional: false, nullable: true,
+			format: 'url',
+		},
+		dashManifestUrl: {
+			type: 'string',
+			optional: false, nullable: true,
+			format: 'url',
+		},
+		transcodingStatus: {
+			type: 'string',
+			optional: false, nullable: true,
 		},
 		thumbnailUrl: {
 			type: 'string',
