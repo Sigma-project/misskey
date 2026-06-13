@@ -37,6 +37,7 @@ import type {
 	SystemQueue,
 	SystemWebhookDeliverQueue,
 	UserWebhookDeliverQueue,
+	VideoTranscodingQueue,
 } from './QueueModule.js';
 import type httpSignature from '@peertube/http-signature';
 import type * as Bull from 'bullmq';
@@ -52,6 +53,7 @@ export const QUEUE_TYPES = [
 	'objectStorage',
 	'userWebhookDeliver',
 	'systemWebhookDeliver',
+	'videoTranscoding',
 ] as const;
 
 const REPEATABLE_SYSTEM_JOB_DEF = [{
@@ -114,6 +116,7 @@ export class QueueService {
 		@Inject('queue:objectStorage') public objectStorageQueue: ObjectStorageQueue,
 		@Inject('queue:userWebhookDeliver') public userWebhookDeliverQueue: UserWebhookDeliverQueue,
 		@Inject('queue:systemWebhookDeliver') public systemWebhookDeliverQueue: SystemWebhookDeliverQueue,
+		@Inject('queue:videoTranscoding') public videoTranscodingQueue: VideoTranscodingQueue,
 	) {
 		for (const def of REPEATABLE_SYSTEM_JOB_DEF) {
 			this.systemQueue.upsertJobScheduler(def.name, {
@@ -634,6 +637,29 @@ export class QueueService {
 			removeOnFail: {
 				age: 3600 * 24 * 7, // keep up to 7 days
 				count: 100,
+			},
+		});
+	}
+
+	@bindThis
+	public createVideoTranscodingJob(fileId: MiDriveFile['id']) {
+		return this.videoTranscodingQueue.add('transcode', {
+			fileId,
+		}, {
+			// fileIdをjobIdに使うことで同一ファイルの重複ジョブを防ぐ
+			jobId: fileId,
+			attempts: 3,
+			backoff: {
+				type: 'exponential',
+				delay: 60 * 1000,
+			},
+			removeOnComplete: {
+				age: 3600 * 24 * 3, // keep up to 3 days
+				count: 100,
+			},
+			removeOnFail: {
+				age: 3600 * 24 * 7, // keep up to 7 days
+				count: 300,
 			},
 		});
 	}
