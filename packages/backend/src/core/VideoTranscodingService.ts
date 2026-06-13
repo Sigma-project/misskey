@@ -440,9 +440,12 @@ export class VideoTranscodingService {
 	}
 
 	/**
-	 * DASH manifest(.mpd) を SegmentList 形式で生成する。
-	 * 各 representation の init / 実セグメント / 実セグメント長（playlist の #EXTINF）を用い、
+	 * DASH manifest(.mpd) を SegmentTemplate + SegmentTimeline 形式で生成する。
+	 * 各 representation の init / 実セグメント数 / 実セグメント長（playlist の #EXTINF）を用い、
 	 * codecs/width/height/bandwidth は probe 済みメタから埋める（固定テンプレートにしない）。
+	 *
+	 * probe に失敗して width/height・codec を信頼できない representation は除外する
+	 * （壊れた MPD を出すより安全。特に VVC は probe が取れない環境では gate される）。
 	 */
 	@bindThis
 	private async buildDashManifest(variants: TranscodingVariant[], outDir: string): Promise<string> {
@@ -450,24 +453,26 @@ export class VideoTranscodingService {
 		const adaptationSets: string[] = [];
 
 		for (const variant of variants) {
+			// probe 失敗（width=0）は codec/寸法が信頼できないため representation を出さない
+			if (variant.width <= 0 || variant.height <= 0) continue;
+
 			const playlistPath = Path.join(outDir, variant.playlistPath);
 			const segments = await this.parsePlaylistSegments(playlistPath);
 			if (segments.length === 0) continue;
 
-			const segmentUrls = segments
-				.map(seg => `\t\t\t\t\t<SegmentURL media="${variant.codec}/${seg.file}"/>`)
+			// SegmentTimeline で各セグメントの実長(ms, timescale=1000)を反映する
+			const timeline = segments
+				.map(seg => `\t\t\t\t\t\t<S d="${Math.round(seg.duration * 1000)}"/>`)
 				.join('\n');
-
-			// SegmentList は duration を timescale 単位で指定する（ここでは 1000 = ミリ秒）
-			const avgDurationMs = Math.round((variant.durationSec / segments.length) * 1000);
 
 			adaptationSets.push([
 				`\t\t<AdaptationSet contentType="video" segmentAlignment="true" mimeType="video/mp4">`,
-				`\t\t\t<Representation id="${variant.codec}" codecs="${variant.codecString}"${variant.width > 0 ? ` width="${variant.width}" height="${variant.height}"` : ''} bandwidth="${variant.bitrate}">`,
-				`\t\t\t\t<SegmentList timescale="1000" duration="${avgDurationMs}">`,
-				`\t\t\t\t\t<Initialization sourceURL="${variant.initPath}"/>`,
-				segmentUrls,
-				`\t\t\t\t</SegmentList>`,
+				`\t\t\t<Representation id="${variant.codec}" codecs="${variant.codecString}" width="${variant.width}" height="${variant.height}" bandwidth="${variant.bitrate}">`,
+				`\t\t\t\t<SegmentTemplate timescale="1000" initialization="${variant.codec}/init.mp4" media="${variant.codec}/seg-$Number%03d$.m4s" startNumber="1">`,
+				`\t\t\t\t\t<SegmentTimeline>`,
+				timeline,
+				`\t\t\t\t\t</SegmentTimeline>`,
+				`\t\t\t\t</SegmentTemplate>`,
 				`\t\t\t</Representation>`,
 				`\t\t</AdaptationSet>`,
 			].join('\n'));
@@ -479,7 +484,7 @@ export class VideoTranscodingService {
 
 		return [
 			'<?xml version="1.0" encoding="UTF-8"?>',
-			'<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="urn:mpeg:dash:profile:isoff-on-demand:2011" type="static"',
+			'<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="urn:mpeg:dash:profile:isoff-live:2011" type="static"',
 			`\tmediaPresentationDuration="PT${maxDuration.toFixed(3)}S" minBufferTime="PT2S">`,
 			'\t<Period>',
 			adaptationSets.join('\n'),
