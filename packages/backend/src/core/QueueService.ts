@@ -766,6 +766,7 @@ export class QueueService {
 			case 'objectStorage': return this.objectStorageQueue;
 			case 'userWebhookDeliver': return this.userWebhookDeliverQueue;
 			case 'systemWebhookDeliver': return this.systemWebhookDeliverQueue;
+			case 'videoTranscoding': return this.videoTranscodingQueue;
 			default: throw new Error(`Unrecognized queue type: ${type}`);
 		}
 	}
