@@ -22,6 +22,7 @@ import { ChatUserChannel } from './channels/chat-user.js';
 import { ChatRoomChannel } from './channels/chat-room.js';
 import { ReversiChannel } from './channels/reversi.js';
 import { ReversiGameChannel } from './channels/reversi-game.js';
+import { VideoTranscodingChannel } from './channels/video-transcoding.js';
 import type { ChannelConstructor } from './channel.js';
 import { bindThis } from '@/decorators.js';
 
@@ -52,6 +53,7 @@ export class ChannelsService {
 			case 'chatRoom': return ChatRoomChannel;
 			case 'reversi': return ReversiChannel;
 			case 'reversiGame': return ReversiGameChannel;
+			case 'videoTranscoding': return VideoTranscodingChannel;
 
 			default:
 				throw new Error(`no such channel: ${name}`);
