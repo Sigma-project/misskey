@@ -75,6 +75,11 @@ export class S3Service {
 	 */
 	@bindThis
 	public async deletePrefix(meta: MiMeta, prefix: string) {
+		// 空・ルート相当のprefixはバケット全削除事故を招くため拒否する
+		if (prefix === '' || prefix === '/') {
+			throw new Error('deletePrefix refused: empty or root prefix');
+		}
+
 		const client = this.getS3Client(meta);
 		const bucket = meta.objectStorageBucket ?? undefined;
 		let continuationToken: string | undefined = undefined;
