@@ -46,7 +46,18 @@ export type TranscodeResult = {
 	hasDash: boolean;
 };
 
+// キャンセル要求で中断したことを示すエラー（呼び出し側がリトライせず中断扱いにするための目印）
+export class TranscodeCancelledError extends Error {
+	public readonly isTranscodeCancelled = true;
+	constructor() {
+		super('Transcoding was cancelled');
+		this.name = 'TranscodeCancelledError';
+	}
+}
+
 const SEGMENT_SECONDS = 6;
+// 協調キャンセルの確認間隔（DB問い合わせを伴うため間引く）
+const CANCEL_CHECK_INTERVAL_MS = 3000;
 // 暴走・ストレージ枯渇対策のデフォルト出力サイズ上限（呼び出し側で上書き可）
 const DEFAULT_MAX_OUTPUT_BYTES = 5 * 1024 * 1024 * 1024;
 // ffmpeg の wall-clock タイムアウト（動画長 × 係数 + 余裕、ただし上限あり）
@@ -80,6 +91,7 @@ export class VideoTranscodingService {
 		durationSec: number;
 		sourceVideoCodec?: string;
 		maxOutputBytes?: number;
+		shouldCancel?: () => Promise<boolean>;
 		onProgress?: (p: TranscodeProgress) => void;
 	}): Promise<TranscodeResult> {
 		const caps = await this.ffmpegCapabilityService.getCapabilities();
@@ -102,6 +114,7 @@ export class VideoTranscodingService {
 			audioCodec,
 			copyVideo: opts.sourceVideoCodec === 'av1',
 			maxOutputBytes,
+			shouldCancel: opts.shouldCancel,
 			onProgress: opts.onProgress,
 		});
 		const av1Variant = await this.collectVariant('av1', opts.outDir, opts.durationSec, audioCodec);
@@ -109,6 +122,11 @@ export class VideoTranscodingService {
 			throw new Error('AV1 transcode produced no usable output');
 		}
 		variants.push(av1Variant);
+
+		// AV1 完了時点でキャンセル確認（VVC に入る前に中断できるように）
+		if (opts.shouldCancel != null && await opts.shouldCancel()) {
+			throw new TranscodeCancelledError();
+		}
 
 		// --- VVC (DASH only) ---
 		// encoder と DASH(あるいはfMP4 muxer) が揃う場合のみ。揃わなければ gate して AV1 のみで完結。
@@ -122,6 +140,7 @@ export class VideoTranscodingService {
 					audioCodec,
 					copyVideo: false,
 					maxOutputBytes,
+					shouldCancel: opts.shouldCancel,
 					onProgress: opts.onProgress,
 				});
 				const vvcVariant = await this.collectVariant('vvc', opts.outDir, opts.durationSec, audioCodec);
@@ -129,6 +148,8 @@ export class VideoTranscodingService {
 					variants.push(vvcVariant);
 				}
 			} catch (err) {
+				// キャンセルは中断として伝播させる（best-effort 扱いにしない）
+				if (err instanceof TranscodeCancelledError) throw err;
 				// VVC は best-effort。失敗しても AV1 の結果は活かす
 				this.logger.warn('VVC transcode failed; continuing with AV1 only', err as Error);
 			}
@@ -176,6 +197,7 @@ export class VideoTranscodingService {
 		audioCodec: 'libopus' | 'aac';
 		copyVideo: boolean;
 		maxOutputBytes?: number;
+		shouldCancel?: () => Promise<boolean>;
 		onProgress?: (p: TranscodeProgress) => void;
 	}): Promise<void> {
 		const codecDir = Path.join(opts.outDir, opts.codec);
@@ -213,7 +235,10 @@ export class VideoTranscodingService {
 
 			let timedOut = false;
 			let exceededSize = false;
+			let cancelled = false;
 			let sizeCheckInProgress = false;
+			let cancelCheckInProgress = false;
+			let lastCancelCheck = 0;
 			const timer = setTimeout(() => {
 				timedOut = true;
 				command.kill('SIGKILL');
@@ -247,6 +272,23 @@ export class VideoTranscodingService {
 							sizeCheckInProgress = false;
 						});
 					}
+
+					// 協調キャンセル: 一定間隔でキャンセル要求を確認し、要求されていれば kill する
+					if (opts.shouldCancel != null && !cancelCheckInProgress && !cancelled) {
+						const now = Date.now();
+						if (now - lastCancelCheck >= CANCEL_CHECK_INTERVAL_MS) {
+							lastCancelCheck = now;
+							cancelCheckInProgress = true;
+							opts.shouldCancel().then(shouldStop => {
+								if (shouldStop) {
+									cancelled = true;
+									command.kill('SIGKILL');
+								}
+							}).catch(() => { /* ignore */ }).finally(() => {
+								cancelCheckInProgress = false;
+							});
+						}
+					}
 				})
 				.on('end', () => {
 					clearTimeout(timer);
@@ -254,7 +296,8 @@ export class VideoTranscodingService {
 				})
 				.on('error', (err) => {
 					clearTimeout(timer);
-					if (timedOut) reject(new Error(`ffmpeg timed out after ${timeoutMs}ms`));
+					if (cancelled) reject(new TranscodeCancelledError());
+					else if (timedOut) reject(new Error(`ffmpeg timed out after ${timeoutMs}ms`));
 					else if (exceededSize) reject(new Error('Transcoded output exceeded the size limit during encoding'));
 					else reject(err);
 				})

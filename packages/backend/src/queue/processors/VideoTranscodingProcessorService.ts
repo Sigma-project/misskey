@@ -20,7 +20,7 @@ import { DownloadService } from '@/core/DownloadService.js';
 import { InternalStorageService } from '@/core/InternalStorageService.js';
 import { S3Service } from '@/core/S3Service.js';
 import { FFmpegCapabilityService } from '@/core/FFmpegCapabilityService.js';
-import { VideoTranscodingService, type TranscodingVariant } from '@/core/VideoTranscodingService.js';
+import { VideoTranscodingService, TranscodeCancelledError, type TranscodingVariant } from '@/core/VideoTranscodingService.js';
 import { VideoTranscodingProgressService, type VideoTranscodingProgress } from '@/core/VideoTranscodingProgressService.js';
 import { QueueLoggerService } from '../QueueLoggerService.js';
 import type * as Bull from 'bullmq';
@@ -128,6 +128,11 @@ export class VideoTranscodingProcessorService {
 				durationSec,
 				sourceVideoCodec: file.properties.videoCodec,
 				maxOutputBytes: maxFileSize > 0 ? maxFileSize * 20 : undefined,
+				// 協調キャンセル: cancel API が transcodingStatus を failed にする / ファイル削除済みなら中断
+				shouldCancel: async () => {
+					const current = await this.driveFilesRepository.findOneBy({ id: file.id });
+					return current == null || current.transcodingStatus === 'failed';
+				},
 				onProgress: (p) => {
 					void this.publish(file, caps.vvc, startedAt, p.phase, p.percent, { codec: p.codec, fps: p.fps, speed: p.speed });
 				},
@@ -168,11 +173,18 @@ export class VideoTranscodingProcessorService {
 			await this.publish(file, caps.vvc, startedAt, 'done', 100);
 			return 'Success';
 		} catch (err) {
-			this.logger.error(`Transcoding failed for ${file.id}`, err as Error);
-			// アップロード済み成果物の孤児化を防ぐ（コミット前に失敗した場合）
+			// アップロード済み成果物の孤児化を防ぐ（コミット前に失敗/中断した場合）
 			if (storedPrefix != null) {
 				await this.cleanupArtifacts(storedPrefix, storedInternal, meta).catch(() => { /* ignore */ });
 			}
+
+			// キャンセル中断はリトライせず、status(既にfailed)も上書きしない
+			if (err instanceof TranscodeCancelledError) {
+				this.logger.info(`Transcoding cancelled for ${file.id}`);
+				return 'aborted: cancelled';
+			}
+
+			this.logger.error(`Transcoding failed for ${file.id}`, err as Error);
 			// 最終試行で失敗した場合のみ failed を確定させる
 			const maxAttempts = job.opts.attempts ?? 1;
 			if (job.attemptsMade + 1 >= maxAttempts) {
