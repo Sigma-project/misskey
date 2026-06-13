@@ -422,4 +422,24 @@ codex レビューを受けて以下を変更：
 
 ## 実装上の差分（計画→実装）
 
-- （実装中に確定した差分をここに追記する）
+### 確定した設計・実装
+
+- **ストレージプレフィックス**: `transcodingPrefix` は論理プレフィックス `stream-{fileId}-{rand}`（rand は 16 桁 hex）。内部ストレージは `{filesDir}/{prefix}/...`、S3 は `{objectStoragePrefix}/{prefix}/...`。配信ルートの prefix 検証は `^stream-[0-9a-z]+-[0-9a-z]+$`。
+- **成果物の配信**: 内部ストレージ保存時は `/transcoded/:prefix/*`（Range/Content-Type/Cache 対応）。ObjectStorage 保存時は成果物 URL が S3 を直接指すため専用ルートは不要。`transcodingStoredInternal` で保存先を記録し、削除時に正しいバックエンドを選ぶ。
+- **manifest 内のセグメント参照は相対パス**（`av1/seg-001.m4s` 等）にし、HLS/DASH で同一 CMAF セグメントを共有。HLS muxer に絶対パスで出力後、media playlist の URI を basename へ正規化している。
+- **DASH MPD**: 固定テンプレートではなく、実セグメント（playlist の `#EXTINF`）と init を ffprobe して SegmentList 形式で生成。VVC の codec string が取れない等で representation を構成できない場合は AV1 のみに縮退、それも無理なら DASH 自体を出さず HLS のみ。
+- **codec string は best-effort**（特に VVC）。HLS master の CODECS 属性は誤判定回避のため付与せず、プレイヤーのメディア判定に委ねている。
+- **enqueue 前 skip 判定**は `FileInfoService` の duration/codec（DriveFile.properties に保存）で行い、Processor 側でも二重に判定。
+- **進捗 Redis** は `videoTranscoding:active:{fileId}`（per-job key, 進行中 24h / 終端 60s TTL）+ `videoTranscoding:index`（set）。`GlobalEventService.publishVideoTranscodingStream` 経由で `videoTranscodingStream` チャンネルに型付き配信。スロットリングは最短 1 秒（終端は常に配信）。
+- **キャンセル**は主に待機中ジョブ対象（`videoTranscodingQueue.getJob(fileId).remove()`、jobId=fileId）。実行中（ロック中）ジョブの即時停止は best-effort。
+
+### この環境で実行できなかったコード生成 / 検証ステップ
+
+ローカルに `tsgo`（TypeScript ネイティブコンパイラ）が未インストールで、フルビルド成果物（frontend の vite manifest 等）も無いため、以下は CI / 開発フルビルドで実施が必要：
+
+- `pnpm --filter backend generate-api-json` → `pnpm --filter misskey-js/generator generate` → `update-autogen-code`：misskey-js autogen（`endpoint.ts`/`types.ts` の operations 等）の再生成。本実装では DriveFile エンティティの新フィールドのみ autogen `types.ts` に手動反映済み。新 admin エンドポイント 3 種とストリーミングチャンネルの型は再生成で確定する（フロントエンドは暫定的に型キャストで呼び出している）。
+- `pnpm --filter misskey-js api`：API report（`etc/misskey-js.api.md`）の更新。
+- フロントエンドの typecheck / lint（tsgo 依存）。
+- postgres を用いた migration `up`/`down`/`check-migrations`（マイグレーションは ADD/DROP COLUMN の対称な up/down を実装済み）。
+
+バックエンドは `tsc --noEmit` で型チェック済みで、本実装が追加・変更したファイルに型エラーは無い（既存の Reversi/Signin 関連エラーは develop 由来で本実装と無関係）。
