@@ -384,18 +384,33 @@ export class FileInfoService {
 		const sublogger = this.logger.createSubLogger('ffprobe');
 		sublogger.info(`Checking the video file. File path: ${path}`);
 		return new Promise((resolve) => {
+			let settled = false;
+			const done = (value: boolean) => {
+				if (settled) return;
+				settled = true;
+				resolve(value);
+			};
+
+			// ffprobe ハング対策の wall-clock タイムアウト（壊れた入力でアップロードを止めない）
+			const timer = setTimeout(() => {
+				sublogger.warn(`ffprobe timed out. Returns true. File path: ${path}`);
+				done(true);
+			}, 30 * 1000);
+
 			try {
 				FFmpeg.ffprobe(path, (err, metadata) => {
+					clearTimeout(timer);
 					if (err) {
 						sublogger.warn(`Could not check the video file. Returns true. File path: ${path}`, err);
-						resolve(true);
+						done(true);
 						return;
 					}
-					resolve(metadata.streams.some((stream) => stream.codec_type === 'video'));
+					done(metadata.streams.some((stream) => stream.codec_type === 'video'));
 				});
 			} catch (err) {
+				clearTimeout(timer);
 				sublogger.warn(`Could not check the video file. Returns true. File path: ${path}`, err as Error);
-				resolve(true);
+				done(true);
 			}
 		});
 	}
