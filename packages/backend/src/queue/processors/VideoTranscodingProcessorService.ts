@@ -96,6 +96,10 @@ export class VideoTranscodingProcessorService {
 			return 'skip: AV1/HLS not available';
 		}
 
+		// 再トランスコード時に旧成果物を後で掃除するため、現在のprefixを控えておく
+		const oldPrefix = file.transcodingPrefix;
+		const oldStoredInternal = file.transcodingStoredInternal ?? false;
+
 		await this.driveFilesRepository.update(file.id, { transcodingStatus: 'processing' });
 		await this.publish(file, caps.vvc, startedAt, 'queued', 0);
 
@@ -136,24 +140,29 @@ export class VideoTranscodingProcessorService {
 			storedPrefix = upload.storedPrefix;
 			await this.publish(file, caps.vvc, startedAt, 'uploading', 100);
 
-			// --- 協調キャンセル: コミット直前に取り消し/削除を再確認 ---
-			const latest = await this.driveFilesRepository.findOneBy({ id: file.id });
-			if (latest == null || latest.transcodingStatus === 'failed') {
-				// キャンセル済み or ファイル削除済み → アップロード済み成果物を破棄
+			// --- persist（processing のままの時だけ commit。cancel/delete とのraceを条件付きupdateで原子的に防ぐ） ---
+			const updateResult = await this.driveFilesRepository.update(
+				{ id: file.id, transcodingStatus: 'processing' },
+				{
+					hlsManifestUrl: result.hasHls ? upload.hlsUrl : null,
+					dashManifestUrl: result.hasDash ? upload.dashUrl : null,
+					transcodingStatus: 'completed',
+					transcodingPrefix: storedPrefix,
+					transcodingStoredInternal: storedInternal,
+					transcodingVariants: result.variants,
+				},
+			);
+			if (!updateResult.affected) {
+				// cancel/delete された or status が変わった → アップロード済み成果物を破棄
 				await this.cleanupArtifacts(storedPrefix, storedInternal, meta).catch(() => { /* ignore */ });
 				storedPrefix = null;
-				return 'aborted: cancelled';
+				return 'aborted: cancelled or removed';
 			}
 
-			// --- persist ---
-			await this.driveFilesRepository.update(file.id, {
-				hlsManifestUrl: result.hasHls ? upload.hlsUrl : null,
-				dashManifestUrl: result.hasDash ? upload.dashUrl : null,
-				transcodingStatus: 'completed',
-				transcodingPrefix: storedPrefix,
-				transcodingStoredInternal: storedInternal,
-				transcodingVariants: result.variants,
-			});
+			// 再トランスコード成功時、旧成果物を掃除（orphan化防止）
+			if (oldPrefix != null && oldPrefix !== storedPrefix) {
+				await this.cleanupArtifacts(oldPrefix, oldStoredInternal, meta).catch(() => { /* ignore */ });
+			}
 
 			await this.publish(file, caps.vvc, startedAt, 'done', 100);
 			return 'Success';
