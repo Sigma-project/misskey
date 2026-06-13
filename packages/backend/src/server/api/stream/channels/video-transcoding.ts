@@ -5,6 +5,7 @@
 
 import { Inject, Injectable, Scope } from '@nestjs/common';
 import { bindThis } from '@/decorators.js';
+import { RoleService } from '@/core/RoleService.js';
 import type { JsonObject, JsonValue } from '@/misc/json-value.js';
 import Channel, { type ChannelRequest } from '../channel.js';
 import { REQUEST } from '@nestjs/core';
@@ -19,13 +20,20 @@ export class VideoTranscodingChannel extends Channel {
 	constructor(
 		@Inject(REQUEST)
 		request: ChannelRequest,
+
+		private roleService: RoleService,
 	) {
 		super(request);
 	}
 
 	@bindThis
 	public async init(params: JsonObject) {
-		// 全モデレーターが同一のブロードキャストチャンネルを購読する
+		// Connection 側の kind チェックはトークン認証時のみ効くため、
+		// セッション認証でも漏れないようチャンネル側でモデレーター権限を明示的に検証する。
+		// （本チャンネルは全体ブロードキャストを購読するため、ユーザー別チャンネルと違い権限バイパスが情報漏洩に直結する）
+		const isModerator = await this.roleService.isModerator(this.user);
+		if (!isModerator) return;
+
 		this.subscriber.on('videoTranscodingStream', this.onEvent);
 	}
 
