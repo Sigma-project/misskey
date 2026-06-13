@@ -74,6 +74,9 @@ export * as 'admin/queue/show-job-logs' from './endpoints/admin/queue/show-job-l
 export * as 'admin/queue/promote-jobs' from './endpoints/admin/queue/promote-jobs.js';
 export * as 'admin/queue/jobs' from './endpoints/admin/queue/jobs.js';
 export * as 'admin/queue/stats' from './endpoints/admin/queue/stats.js';
+export * as 'admin/video-transcoding/list-jobs' from './endpoints/admin/video-transcoding/list-jobs.js';
+export * as 'admin/video-transcoding/cancel-job' from './endpoints/admin/video-transcoding/cancel-job.js';
+export * as 'admin/video-transcoding/retry-job' from './endpoints/admin/video-transcoding/retry-job.js';
 export * as 'admin/queue/queues' from './endpoints/admin/queue/queues.js';
 export * as 'admin/queue/queue-stats' from './endpoints/admin/queue/queue-stats.js';
 export * as 'admin/relays/add' from './endpoints/admin/relays/add.js';
