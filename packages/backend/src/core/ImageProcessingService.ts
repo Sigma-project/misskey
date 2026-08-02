@@ -5,7 +5,7 @@
 
 import { Injectable } from '@nestjs/common';
 import sharp from 'sharp';
-import type { Sharp, WebpOptions, AvifOptions, JxlOptions } from 'sharp';
+import type { Sharp, AvifOptions, JxlOptions } from 'sharp';
 
 export type IImage = {
 	data: Buffer;
@@ -27,17 +27,6 @@ export type IImageSharp = {
 
 export type IImageStreamable = IImage | IImageStream | IImageSharp;
 
-export const webpDefault: WebpOptions = {
-	quality: 77,
-	alphaQuality: 95,
-	lossless: false,
-	nearLossless: false,
-	smartSubsample: true,
-	mixed: true,
-	effort: 2,
-	loop: 0,
-};
-
 export const avifDefault: AvifOptions = {
 	quality: 60,
 	lossless: false,
@@ -58,48 +47,6 @@ import { Readable } from 'node:stream';
 export class ImageProcessingService {
 	constructor(
 	) {
-	}
-
-	/**
-	 * Convert to WebP
-	 *   with resize, remove metadata, resolve orientation, stop animation
-	 */
-	@bindThis
-	public async convertToWebp(path: string, width: number, height: number, options: WebpOptions = webpDefault): Promise<IImage> {
-		return this.convertSharpToWebp(sharp(path), width, height, options);
-	}
-
-	@bindThis
-	public async convertSharpToWebp(sharp: Sharp, width: number, height: number, options: WebpOptions = webpDefault): Promise<IImage> {
-		const result = this.convertSharpToWebpStream(sharp, width, height, options);
-
-		return {
-			data: await result.data.toBuffer(),
-			ext: result.ext,
-			type: result.type,
-		};
-	}
-
-	@bindThis
-	public convertToWebpStream(path: string, width: number, height: number, options: WebpOptions = webpDefault): IImageSharp {
-		return this.convertSharpToWebpStream(sharp(path), width, height, options);
-	}
-
-	@bindThis
-	public convertSharpToWebpStream(sharp: Sharp, width: number, height: number, options: WebpOptions = webpDefault): IImageSharp {
-		const data = sharp
-			.resize(width, height, {
-				fit: 'inside',
-				withoutEnlargement: true,
-			})
-			.rotate()
-			.webp(options);
-
-		return {
-			data,
-			ext: 'webp',
-			type: 'image/webp',
-		};
 	}
 
 	/**
