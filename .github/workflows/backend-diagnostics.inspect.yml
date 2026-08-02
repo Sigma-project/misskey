@@ -20,6 +20,11 @@ jobs:
     permissions:
       contents: read
 
+    env:
+      # sharp をグローバル libvips (JXL 有効) に対してソースビルドさせる
+      SHARP_FORCE_GLOBAL_LIBVIPS: '1'
+      npm_config_build_from_source: 'true'
+
     services:
       postgres:
         image: postgres:18
