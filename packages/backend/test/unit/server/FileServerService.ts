@@ -532,7 +532,7 @@ describe('FileServerService', () => {
 			expect(res.headers['cache-control']).toBe('max-age=31536000, immutable');
 		});
 
-		test('GET /files/:key thumbnail は mediaProxy/static.webp にリダイレクトする', async () => {
+		test('GET /files/:key thumbnail は mediaProxy/static.jxl にリダイレクトする', async () => {
 			const accessKey = randomString();
 			const thumbnailKey = randomString();
 			await insertDriveFile({
@@ -551,11 +551,11 @@ describe('FileServerService', () => {
 
 			expect(res.statusCode).toBe(301);
 			expect(res.headers['cache-control']).toBe('max-age=31536000, immutable');
-			expect(res.headers.location).toContain(`${config.mediaProxy}/static.webp`);
+			expect(res.headers.location).toContain(`${config.mediaProxy}/static.jxl`);
 			expect(res.headers.location).toContain('static=1');
 		});
 
-		test('GET /files/:key webpublic svg は mediaProxy/svg.webp にリダイレクトする', async () => {
+		test('GET /files/:key webpublic svg は mediaProxy/svg.jxl にリダイレクトする', async () => {
 			const accessKey = randomString();
 			const webpublicKey = randomString();
 			await insertDriveFile({
@@ -575,7 +575,7 @@ describe('FileServerService', () => {
 
 			expect(res.statusCode).toBe(301);
 			expect(res.headers['cache-control']).toBe('max-age=31536000, immutable');
-			expect(res.headers.location).toContain(`${config.mediaProxy}/svg.webp`);
+			expect(res.headers.location).toContain(`${config.mediaProxy}/svg.jxl`);
 		});
 	});
 
@@ -661,7 +661,7 @@ describe('FileServerService', () => {
 			expect(res.headers['cache-control']).toBe('max-age=300');
 		});
 
-		test('GET /proxy/:url* emoji static で webp を返す', async () => {
+		test('GET /proxy/:url* emoji static で jxl を返す', async () => {
 			const res = await fastify.inject({
 				method: 'GET',
 				url: `/proxy/any?url=${encodeURIComponent(remotePngUrl)}&emoji=1&static=1`,
@@ -671,12 +671,12 @@ describe('FileServerService', () => {
 			});
 
 			expect(res.statusCode).toBe(200);
-			expect(res.headers['content-type']).toBe('image/webp');
+			expect(res.headers['content-type']).toBe('image/jxl');
 			expect(res.headers['cache-control']).toBe('max-age=31536000, immutable');
-			expect(res.headers['content-disposition'] ?? '').toContain('dummy.png.webp');
+			expect(res.headers['content-disposition'] ?? '').toContain('dummy.jxl');
 		});
 
-		test('GET /proxy/:url* avatar static で webp を返す', async () => {
+		test('GET /proxy/:url* avatar static で jxl を返す', async () => {
 			const res = await fastify.inject({
 				method: 'GET',
 				url: `/proxy/any?url=${encodeURIComponent(remotePngUrl)}&avatar=1&static=1`,
@@ -686,12 +686,12 @@ describe('FileServerService', () => {
 			});
 
 			expect(res.statusCode).toBe(200);
-			expect(res.headers['content-type']).toBe('image/webp');
+			expect(res.headers['content-type']).toBe('image/jxl');
 			expect(res.headers['cache-control']).toBe('max-age=31536000, immutable');
-			expect(res.headers['content-disposition'] ?? '').toContain('dummy.png.webp');
+			expect(res.headers['content-disposition'] ?? '').toContain('dummy.jxl');
 		});
 
-		test('GET /proxy/:url* static で webp を返す', async () => {
+		test('GET /proxy/:url* static で jxl を返す', async () => {
 			const res = await fastify.inject({
 				method: 'GET',
 				url: `/proxy/any?url=${encodeURIComponent(remotePngUrl)}&static=1`,
@@ -701,12 +701,12 @@ describe('FileServerService', () => {
 			});
 
 			expect(res.statusCode).toBe(200);
-			expect(res.headers['content-type']).toBe('image/webp');
+			expect(res.headers['content-type']).toBe('image/jxl');
 			expect(res.headers['cache-control']).toBe('max-age=31536000, immutable');
-			expect(res.headers['content-disposition'] ?? '').toContain('dummy.png.webp');
+			expect(res.headers['content-disposition'] ?? '').toContain('dummy.jxl');
 		});
 
-		test('GET /proxy/:url* preview で webp を返す', async () => {
+		test('GET /proxy/:url* preview で jxl を返す', async () => {
 			const res = await fastify.inject({
 				method: 'GET',
 				url: `/proxy/any?url=${encodeURIComponent(remotePngUrl)}&preview=1`,
@@ -716,12 +716,12 @@ describe('FileServerService', () => {
 			});
 
 			expect(res.statusCode).toBe(200);
-			expect(res.headers['content-type']).toBe('image/webp');
+			expect(res.headers['content-type']).toBe('image/jxl');
 			expect(res.headers['cache-control']).toBe('max-age=31536000, immutable');
-			expect(res.headers['content-disposition'] ?? '').toContain('dummy.png.webp');
+			expect(res.headers['content-disposition'] ?? '').toContain('dummy.jxl');
 		});
 
-		test('GET /proxy/:url* svg を webp に変換する', async () => {
+		test('GET /proxy/:url* svg を jxl に変換する', async () => {
 			const res = await fastify.inject({
 				method: 'GET',
 				url: `/proxy/any?url=${encodeURIComponent(remoteSvgUrl)}`,
@@ -731,9 +731,9 @@ describe('FileServerService', () => {
 			});
 
 			expect(res.statusCode).toBe(200);
-			expect(res.headers['content-type']).toBe('image/webp');
+			expect(res.headers['content-type']).toBe('image/jxl');
 			expect(res.headers['cache-control']).toBe('max-age=31536000, immutable');
-			expect(res.headers['content-disposition'] ?? '').toContain('dummy.svg.webp');
+			expect(res.headers['content-disposition'] ?? '').toContain('dummy.svg.jxl');
 		});
 
 		test('GET /proxy/:url* badge で低エントロピー画像は 404 を返す', async () => {
