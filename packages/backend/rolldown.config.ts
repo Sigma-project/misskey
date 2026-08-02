@@ -95,6 +95,8 @@ export default defineConfig((args) => {
 		'aws-sdk',
 		'nock',
 		'sharp',
+		// WASMアセット (vips.wasm等) をnode_modulesから実行時ロードさせるためバンドルしない
+		'wasm-vips',
 		'jsdom',
 		're2',
 		'ipaddr.js',
