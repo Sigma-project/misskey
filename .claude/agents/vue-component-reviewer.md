@@ -27,7 +27,7 @@ BASE=$(git merge-base origin/develop HEAD)
 
 `.ts` を一律で含めると本エージェントの守備範囲外 (composable / store / service 層) まで巻き込んで誤検知が増えるため、対象は `.vue` のみとし、Storybook 併設チェックのために以下を **別リスト** として追加する:
 
-- `locales/*.yml` (とくに `ja-JP.yml` 以外の変更は即 Critical)
+- `locales/*.yml` (`ja-JP.yml` / `en-US.yml` 以外の変更は即 Critical。en-US は fork 独自キーの追加のみ可)
 - `packages/frontend/src/components/**/*.stories.impl.ts`
 - `CHANGELOG.md`
 
@@ -67,8 +67,8 @@ SPDX-License-Identifier: AGPL-3.0-only
 - 文字列リテラルの直書き禁止 (テンプレート / JS 両方)。
 - 引数なし: `i18n.ts.<path>` (例: `i18n.ts.deleted`)。
 - 引数あり: `i18n.tsx.<path>(...)` (関数呼び出し、例: `i18n.tsx.takeOverConfirm({ name })`)。
-- 新規 i18n キーは `locales/ja-JP.yml` **のみ** に追加。
-- **`locales/ja-JP.yml` 以外の `.yml` 変更があれば即 Critical** (`en-US.yml` 等は Crowdin 自動配信先で、手動編集すると上書き喪失する)。
+- 新規 i18n キーは `locales/ja-JP.yml` (必須) と `locales/en-US.yml` (fork 独自キーなら推奨) に追加。
+- **`ja-JP.yml` / `en-US.yml` 以外の `.yml` 変更があれば即 Critical** (他言語は upstream の Crowdin 配信物で、fork では upstream マージ経由でのみ更新される)。
 
 差分検出:
 
