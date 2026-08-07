@@ -1,6 +1,6 @@
 ---
 name: working-on-frontend
-description: Use whenever editing or adding code under `packages/frontend/`, Vue SFCs, SCSS Modules, Storybook stories, or frontend-facing UI text in `locales/ja-JP.yml`.
+description: Use whenever editing or adding code under `packages/frontend/`, Vue SFCs, SCSS Modules, Storybook stories, or frontend-facing UI text in `locales/ja-JP.yml` / `locales/en-US.yml`.
 ---
 
 # working-on-frontend
