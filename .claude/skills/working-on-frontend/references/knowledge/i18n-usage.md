@@ -28,7 +28,7 @@
 
   YAML 側に `{name}` 形式のプレースホルダが含まれているキーは **`i18n.tsx`** からしか呼べない。誤って `i18n.ts.unfollowConfirm` と書くと値がフォーマット前の関数になってそのまま表示される。
 
-- **既存キーの再利用が第一**。新キー追加が必要に見えても、まず `locales/ja-JP.yml` を grep して `deleteAreYouSure({ x })` のような汎用キー (`x` プレースホルダ) が転用可能でないか確認する。新キー追加は [tasks/adding-i18n-key.md](../tasks/adding-i18n-key.md)。他言語ファイルは Crowdin の自動配信先なので絶対に手で触らない
+- **既存キーの再利用が第一**。新キー追加が必要に見えても、まず `locales/ja-JP.yml` を grep して `deleteAreYouSure({ x })` のような汎用キー (`x` プレースホルダ) が転用可能でないか確認する。新キー追加は [tasks/adding-i18n-key.md](../tasks/adding-i18n-key.md)。**fork 差分**: fork 独自キーは `ja-JP.yml` と `en-US.yml` の両方に追加する。それ以外の言語ファイルは upstream の Crowdin 配信物なので絶対に手で触らない (upstream マージ経由でのみ更新される)
 
 ```vue
 <script lang="ts" setup>
@@ -153,7 +153,7 @@ i18n.tsx.iHaveReadXCarefullyAndAgree({ x: i18n.ts.serverRules })
 
 ## Crowdin 安全策 (既存キーのリネーム / 復旧)
 
-ja-JP.yml 以外の locales/*.yml は **Crowdin の自動配信先**。手動編集や source 側の不用意な操作で他言語の翻訳資産が失われる。
+ja-JP.yml 以外の locales/*.yml は **upstream の Crowdin 自動配信先** (fork では upstream マージ経由でのみ更新)。手動編集や source 側の不用意な操作で他言語の翻訳資産が失われる。fork 独自キーの `en-US.yml` への追加だけは例外として認める (AGENTS.md 参照)。
 
 ### 同期メカニズム
 
