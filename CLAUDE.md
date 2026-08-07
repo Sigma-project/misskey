@@ -1,4 +1,6 @@
-# Misskey – Claude Code Guide
+# Misskey (Sigma-project fork) – Claude Code Guide
+
+このリポジトリは misskey-dev/misskey の fork (Sigma-project/misskey)。メインブランチは `master`。fork 独自の JXL 画像パイプライン等の不変条件は AGENTS.md の「Fork 固有の不変条件」を参照。
 
 ルール本体は [AGENTS.md](AGENTS.md) (Codex / Copilot と共有する単一ソース)。本ファイルは Claude Code 用の薄いラッパーで、`@AGENTS.md` 構文で本体規約をセッション開始時にコンテキストへ展開する。
 
