@@ -1,4 +1,10 @@
-# Misskey – AI Agent Guide
+# Misskey (Sigma-project fork) – AI Agent Guide
+
+このリポジトリは [misskey-dev/misskey](https://github.com/misskey-dev/misskey) の **fork ([Sigma-project/misskey](https://github.com/Sigma-project/misskey))**。fork 独自機能を維持しながら upstream を定期的に取り込んで運用する。
+
+- **メインブランチは `master`** (upstream の `develop` 相当の開発は行わず、`master` ベースで運用)。PR の base も `master`
+- **upstream 取り込み**は `merge/upstream-master-YYYY-MM-DD` 形式の作業ブランチで conflict を解消してから PR で `master` に入れる。解消方針は「**upstream の構造変更を採用し、その上に fork 独自機能 (後述) を再適用**」
+- fork 独自機能の全体像と upstream との差分は「[Fork 固有の不変条件](#fork-固有の不変条件)」を参照
 
 このファイルは Misskey リポジトリで動く AI コーディングエージェント (Claude Code / OpenAI Codex / GitHub Copilot 等) が共通で参照する **絶対禁止事項と最低限のチェック** を集めた索引。次の 3 経路から参照・読み込みされる:
 
@@ -40,8 +46,9 @@
    -->
    ```
 
-2. **`locales/ja-JP.yml` 以外の locale YAML を手動編集しない**
-   - 他言語ファイル (`en-US.yml` など `ja-JP.yml` 以外すべて) は Crowdin の自動配信先。手動編集すると次の同期で上書き喪失する
+2. **`locales/ja-JP.yml` / `locales/en-US.yml` 以外の locale YAML を手動編集しない**
+   - fork 独自キーを追加する場合は `ja-JP.yml` (必須) と `en-US.yml` (推奨) の両方に追加する (fork の既存運用。例: `highest` / `_compression._quality.highest`)
+   - それ以外の言語ファイルは upstream の Crowdin 配信物であり、fork では upstream マージ経由でのみ更新される。手動編集すると次回マージで conflict / 喪失する
    - 根拠: [locales/README.md](locales/README.md) と [crowdin.yml](crowdin.yml) (`ja-JP.yml` → `locales/%locale%.yml` の同期設定)
 
 3. **マージ済 migration ファイルを編集しない**
@@ -76,6 +83,28 @@
 
 ---
 
+## Fork 固有の不変条件
+
+この fork が upstream から意図的に乖離している箇所。upstream マージや refactor で**うっかり upstream の挙動に戻さない**こと。
+
+### 画像パイプライン (WebP → JXL 化)
+
+- **サーバー側の画像変換はすべて JXL**。webpublic (`DriveService.generateAlts`、ロスレス・上限 11648px)、サムネイル、media proxy (`static.jxl` / `svg.jxl` / `emoji.jxl`)、`/emoji/*.jxl` ルート。upstream の WebP (`convertSharpToWebp` 系 / `webpDefault`) に戻さない・復活させない
+- **アニメ画像 (GIF / APNG / アニメ WebP 等) の JXL 変換は [WasmVipsService](packages/backend/src/core/WasmVipsService.ts)** (wasm-vips) が担う。sharp はアニメ JXL 出力に使えない
+- **`packages/backend/rolldown.config.ts` の `external` から `wasm-vips` を外さない**。バンドルされると `vips.wasm` 等の WASM アセットが `built/` に出力されず、実行時 ENOENT でアニメ JXL 変換が全滅する
+- **sharp は JXL 有効のグローバル libvips に対するソースビルド前提**。ローカルは [mise.toml](mise.toml) の `SHARP_FORCE_GLOBAL_LIBVIPS=1` / `npm_config_build_from_source=true`、CI は [.github/actions/setup-libvips](.github/actions/setup-libvips) (libvips を `-Djpeg-xl=enabled` でビルド)。prebuilt sharp は JXL エンコード不可 (`jxlsave_buffer` が無い) なので、ローカルで JXL 系テストが 500/失敗するときはまず環境を疑う
+- **クライアント圧縮は JXL 多段パイプライン** ([use-uploader.ts](packages/frontend/src/composables/use-uploader.ts)): Canvas JXL → WASM JXL (`@jsquash/jxl`) → AVIF/WebP フォールバック。圧縮レベルは 0–4 の 5 段階
+- **フロントは常に元のファイル名でアップロードする** (`item.suffix` に変換後拡張子を入れない)。拡張子の補正は backend の [correctFilename](packages/backend/src/misc/correct-filename.ts) が実際の Content-Type に基づいて行う (二重拡張子防止。根拠: コミット `03a456bd7b`)
+- upstream に JXL 非対応の型定義・定数リストが増えたら fork 側で `image/jxl` を追加する (`FILE_TYPE_BROWSERSAFE`、`is-mime-image.ts`、`THUMBNAIL_SUPPORTED_TYPES` 等が既存例)
+
+### ツールチェイン / CI
+
+- **Node・ツールは mise 管理** ([mise.toml](mise.toml))。ローカル検証は `mise exec -- pnpm ...` または mise タスク (`mise run build`、`mise run ci:lint` 等) で行う
+- **CI workflow は `actions/setup-node` ではなく `jdx/mise-action` + `./.github/actions/setup-libvips`** を使う。upstream マージで workflow が conflict したら「upstream のバージョン更新を採用し、setup-node ブロックを libvips+mise に置換し直す」
+- **テスト用 DB / Redis はルートの [compose.test.yml](compose.test.yml)** (`docker compose -f compose.test.yml up -d --wait`、port 54312 / 56312)
+
+---
+
 ## 変更を出す前の最低チェック
 
 各エージェントは [shipping-misskey-change スキル](.claude/skills/shipping-misskey-change/SKILL.md) を参照すること。スキルが利用できない環境でも、以下のチェックは必ず実施すること:
@@ -85,11 +114,13 @@
 3. **entity / migration 変更時**: `pnpm --filter backend check-migrations` が pending DDL 0 件で通る / 新規 migration は `up()` と `down()` 両方実装済
 4. **新規ファイル**: SPDX ヘッダーを付けた (`.vue` / `.html` は HTML コメント形式、それ以外は TS コメント形式)
 5. **ユーザー影響のある変更**: `CHANGELOG.md` の `## Unreleased` 配下の該当サブセクション (`### General` / `### Client` / `### Server`) に `- <Feat|Enhance|Fix>: <概要>` を 1 行追記
-6. **locale safety**: `locales/` を編集した場合、`git diff --name-only develop -- 'locales/*.yml' | grep -v '^locales/ja-JP\.yml$'` が空 (ja-JP.yml 以外に差分が無い) ことを確認
+6. **locale safety**: `locales/` を編集した場合、`git diff --name-only master -- 'locales/*.yml' | grep -vE '^locales/(ja-JP|en-US)\.yml$'` が空 (ja-JP.yml / en-US.yml 以外に差分が無い) ことを確認
 
 ### Validation commands
 
 各チェックで使う pnpm コマンド一覧。状況に応じて最も近いコマンドから検証する。
+
+fork では Node / pnpm を mise が管理しているため、シェルに mise が通っていない環境では各コマンドを `mise exec -- <コマンド>` で実行する。
 
 | 用途 | コマンド |
 | --- | --- |
@@ -98,9 +129,14 @@
 | Backend e2e test | `pnpm --filter backend test:e2e` |
 | Backend federation test | `pnpm --filter backend test:fed` |
 | Frontend unit test | `pnpm --filter frontend test` |
-| Migration 差分検査 (pending DDL) | `pnpm --filter backend check-migrations` |
+| Migration 差分検査 (pending DDL) | `pnpm --filter backend check-migrations` (先に `pnpm --filter backend migrate` で適用) |
 | `misskey-js` 再生成 (API 変更後必須) | `pnpm build-misskey-js-with-types` |
-| 全体ビルド | `pnpm build` |
+| 全体ビルド | `pnpm build` (依存インストール込みなら `mise run build`) |
 | 開発サーバー (backend + frontend watch) | `pnpm dev` |
+| CI 相当をローカルで一括実行 | `mise run ci` (個別は `mise run ci:lint` / `ci:typecheck` / `ci:test:backend` 等) |
 
-**注意:** backend テスト (`test` / `test:e2e` / `test:fed`) 実行前に `.config/test.yml` が必要 (`ncp .github/misskey/test.yml .config/test.yml` または `cp .github/misskey/test.yml .config/test.yml` で作成)。
+**注意:**
+
+- backend テスト (`test` / `test:e2e` / `test:fed`) と `check-migrations` の実行前に、`.config/test.yml` (`cp .github/misskey/test.yml .config/test.yml`) と テスト用 DB (`docker compose -f compose.test.yml up -d --wait`) が必要
+- `pnpm lint` のうち frontend-builder の typecheck は `@oxc-project/types` の二重バージョンにより **upstream 由来で失敗する** (upstream CI は frontend-builder を typecheck しない)。この失敗は fork の変更起因ではないので、他の workspace が通っていれば lint 通過とみなしてよい
+- ローカル sharp が JXL 非対応 (prebuilt) の場合、JXL 変換を伴うテストが失敗する。コード起因かを切り分けてから対応すること (「Fork 固有の不変条件」参照)
