@@ -23,10 +23,15 @@ SKILL.md 本体は references への索引だけ。具体的な手順や規約�
 タスクに紐付かない参照リファレンス。複数のタスクから引かれる規約・背景説明。
 
 - NestJS DI / module 登録 / `@Injectable` パターン → [references/knowledge/nestjs-di.md](references/knowledge/nestjs-di.md)
+- **fork 固有: JXL 画像パイプライン** → 一覧は [AGENTS.md「Fork 固有の不変条件」](../../../AGENTS.md)。要点:
+  - サーバー側の画像変換 (webpublic / サムネイル / media proxy / emoji) は WebP ではなく **JXL**。`ImageProcessingService.convertSharpToJxl*` を使い、WebP 変換メソッドを復活させない
+  - アニメ画像の JXL 変換は `WasmVipsService` (wasm-vips)。`rolldown.config.ts` の `external` から `wasm-vips` を外すと WASM アセットが欠落して実行時に全滅する
+  - sharp は JXL 有効グローバル libvips へのソースビルド前提 (mise.toml の env)。ローカルで JXL テストが落ちたらまず prebuilt sharp を疑う
+  - アップロード名の拡張子補正は `misc/correct-filename.ts` の責務 (フロントは元ファイル名を渡す)
 - TypeORM entity / `@Column` / `@Index` パターン (難ケース込み) → [references/knowledge/typeorm-patterns.md](references/knowledge/typeorm-patterns.md)
 - API endpoint の `meta` / `paramDef` / `res` 完全早見表 + 落とし穴集 → [references/knowledge/api-meta-paramdef.md](references/knowledge/api-meta-paramdef.md)
 - `endpoint-list.ts` への登録方法 (★ 漏れると 404) → [references/knowledge/endpoint-list.md](references/knowledge/endpoint-list.md)
-- backend テストの前提 (`.config/test.yml`) と書き方 / e2e ヘルパー一覧 → [references/knowledge/backend-testing.md](references/knowledge/backend-testing.md)
+- backend テストの前提 (`.config/test.yml`) と書き方 / e2e ヘルパー一覧 → [references/knowledge/backend-testing.md](references/knowledge/backend-testing.md) (fork ではテスト用 DB をルートの `compose.test.yml` で起動できる: `docker compose -f compose.test.yml up -d --wait`)
 
 ## 必ず最後に通る場所
 
