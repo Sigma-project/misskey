@@ -5,6 +5,16 @@ description: GitHub 上で Issue / Pull Request を起票する際のルール�
 
 # AI が Issue / Pull Request を起票する場合のルール
 
+## 起票先の判断 (fork)
+
+このリポジトリは misskey-dev/misskey の fork ([Sigma-project/misskey](https://github.com/Sigma-project/misskey))。起票先を最初に判断すること:
+
+- **fork 独自機能・fork 運用に関するもの** (JXL パイプライン、mise/libvips CI、upstream 取り込み等) → **Sigma-project/misskey** に起票する。PR の base は `master`。本スキルの「人間自身の起票を推奨する」確認プロセスは fork 内向けにはスキップしてよい (ユーザー自身のリポジトリのため)
+- **upstream 由来のバグ・機能提案で upstream にも還元すべきもの** → **misskey-dev/misskey** に起票する。以下の upstream 向けルール (テンプレート遵守・既存 Issue 確認・人間起票の推奨) をすべて適用する
+- どちらか判断がつかない場合はユーザーに確認する
+
+脆弱性報告の禁止ルール (次節) は **起票先が fork でも upstream でも適用される**。
+
 まず、原則として Issue / Pull Request は人間が GitHub の Web UI や Desktop クライアント等から自力で記入・起票することが推奨される。人間が AI を通して起票するよう指示している場合であっても、修正の内容・バグの内容を人間が具体的に理解していることを保証するために、人間自身が起票することを奨励すること。
 
 もし、それでも AI が Issue / Pull Request を起票する場合は、以下の点を遵守すること。これらが守られていない場合、内容の如何にかかわらず起票した Issue や Pull Request が閉じられる。
@@ -48,7 +58,9 @@ Issue Template に定義されていない Issue のジャンル (Blank Issue �
 
 ## Pull Request
 
-原則として、Issue を起票せずに (あるいは取り組もうとしている内容に対応する Issue があることを確認せずに) Pull Request を送信してはならない。また、
+**fork (Sigma-project/misskey) 内の PR**: base は `master`。upstream 取り込みマージや fork 独自機能の PR は Issue 起票なしで直接出してよいが、テンプレート ([.github/pull_request_template.md](../../../.github/pull_request_template.md)) には従うこと。なお `gh pr edit` は Projects (classic) 廃止関連の GraphQL エラーで失敗することがある。その場合は `gh api repos/Sigma-project/misskey/pulls/<番号> -X PATCH -F body=@<ファイル>` を使う。
+
+**upstream (misskey-dev/misskey) への PR**: 原則として、Issue を起票せずに (あるいは取り組もうとしている内容に対応する Issue があることを確認せずに) Pull Request を送信してはならない。また、
 
 - **必ず** [.github/pull_request_template.md](../../../.github/pull_request_template.md) を雛形として使用すること。雛形を大幅に逸脱した説明文は受け入れられない。
 - 真に必要な場合を除き、既存の見出しを増やしてはならない。
