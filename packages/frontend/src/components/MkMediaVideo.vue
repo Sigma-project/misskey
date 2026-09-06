@@ -173,6 +173,7 @@ const keymap = {
 // PlayerElもしくはその子要素にフォーカスがあるかどうか
 function hasFocus() {
 	if (!playerEl.value) return false;
+
 	return playerEl.value === window.document.activeElement || playerEl.value.contains(window.document.activeElement);
 }
 
