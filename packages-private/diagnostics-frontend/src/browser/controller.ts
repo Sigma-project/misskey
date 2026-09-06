@@ -23,6 +23,7 @@ export class HeadlessChromeController {
 	private readonly context: BrowserContext;
 	public readonly page: Page;
 	private readonly cdp: CDPSession;
+	private readonly allowUnavailableTabMemory: boolean;
 	private networkTracker: NetworkTracker | null = null;
 
 	private constructor(
@@ -31,11 +32,13 @@ export class HeadlessChromeController {
 		page: Page,
 		cdp: CDPSession,
 		options: HeadlessChromeOptions,
+		allowUnavailableTabMemory: boolean,
 	) {
 		this.browser = browser;
 		this.context = context;
 		this.page = page;
 		this.cdp = cdp;
+		this.allowUnavailableTabMemory = allowUnavailableTabMemory;
 		this.page.setDefaultTimeout(options.scenarioTimeoutMs);
 		this.page.setDefaultNavigationTimeout(options.scenarioTimeoutMs);
 		this.page.on('pageerror', () => {
