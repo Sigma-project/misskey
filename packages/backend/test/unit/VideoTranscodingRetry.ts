@@ -25,3 +25,12 @@ function harness(remove?: () => Promise<void>) {
 	return { repository, queue, run: () => endpoint.exec({ fileId: file.id }, {} as MiLocalUser, null) };
 }
 
+describe('video transcoding retry', () => {
+	test('keeps cancellation intact when a running job is still locked', async () => {
+		const failure = new Error('Job is locked');
+		const ctx = harness(async () => { throw failure; });
+		await expect(ctx.run()).rejects.toThrow('Job is locked');
+		expect(ctx.repository.update).not.toHaveBeenCalled();
+		expect(ctx.queue.createVideoTranscodingJob).not.toHaveBeenCalled();
+	});
+});
