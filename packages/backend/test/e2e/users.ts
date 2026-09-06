@@ -947,4 +947,11 @@ describe('Following birthdays', () => {
 			assert.strictEqual(page[0].id, result[offset].id);
 		}
 	});
+
+	test('retains February 29 in leap years, including ranges crossing into a leap year', async () => {
+		const result = await successfulApiCall({ endpoint: 'users/get-following-users-by-birthday', parameters: { year: 2027, birthday: { begin: { month: 12, day: 31 }, end: { month: 3, day: 1 } } }, user: viewer });
+		assert.strictEqual(result.find(item => item.id === users.get('birthdayleap')!.id)!.birthday, '2028-02-29');
+		const march = await successfulApiCall({ endpoint: 'users/get-following-users-by-birthday', parameters: { year: 2028, birthday: { month: 3, day: 1 } }, user: viewer });
+		assert.strictEqual(march.length, 2);
+	});
 });
