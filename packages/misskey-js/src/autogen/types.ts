@@ -35393,6 +35393,8 @@ export interface operations {
                     limit?: number;
                     /** @default 0 */
                     offset?: number;
+                    /** @description Calendar year of the beginning of the birthday range. Defaults to the next occurrence in the server calendar. */
+                    year?: number;
                     birthday: {
                         month: number;
                         day: number;
