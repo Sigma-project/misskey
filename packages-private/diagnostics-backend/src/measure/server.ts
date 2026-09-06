@@ -4,7 +4,9 @@
  */
 
 import { fork, type ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { bytesToKiB } from './proc';
 
 type GcMessage = 'gc ok' | 'gc unavailable';
@@ -21,6 +23,7 @@ type HeapSnapshotErrorMessage = {
 	message: string;
 };
 type HeapSnapshotResponseMessage = HeapSnapshotMessage | HeapSnapshotErrorMessage;
+const legacyServers = new WeakSet<ChildProcess>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return value != null && typeof value === 'object';
@@ -87,11 +90,13 @@ export function waitForMessage<T>(serverProcess: ChildProcess, predicate: (messa
 
 /**
  * ビルド済みバックエンドを子プロセスとして起動する。
- * execArgv は親から引き継がず `--expose-gc` のみを渡す: 親は tsx 経由で動くため、
+ * execArgv は親から引き継がない: 親は tsx 経由で動くため、
  * 引き継ぐと計測対象プロセスにTSローダーが載ってしまいメモリ量が歪む。
  */
 export function forkBackendServer(backendDir: string, nodePath = process.execPath) {
-	return fork(join(backendDir, 'built/entry.js'), [], {
+	const entry = join(backendDir, 'built/entry.js');
+	const legacy = !existsSync(entry);
+	const serverProcess = fork(legacy ? join(backendDir, 'built/boot/entry.js') : entry, [], {
 		cwd: backendDir,
 		execPath: nodePath,
 		env: {
@@ -102,8 +107,13 @@ export function forkBackendServer(backendDir: string, nodePath = process.execPat
 			MK_NO_DAEMONS: '1',
 		},
 		stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
-		execArgv: ['--expose-gc'],
+		execArgv: [
+			'--expose-gc',
+			...(legacy ? ['--require', fileURLToPath(new URL('./legacy-diagnostics.cjs', import.meta.url))] : []),
+		],
 	});
+	if (legacy) legacyServers.add(serverProcess);
+	return serverProcess;
 }
 
 export function waitForServerReady(serverProcess: ChildProcess, timeout: number) {
