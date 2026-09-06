@@ -935,4 +935,16 @@ describe('Following birthdays', () => {
 		assert.strictEqual(second[0].id, users.get('birthdayjanuary')!.id);
 		assert.strictEqual(second[0].birthday, '2026-01-01');
 	});
+
+	test('includes leap-day birthdays on March 1 in common years with stable pagination', async () => {
+		const parameters = { year: 2026, birthday: { month: 3, day: 1 } };
+		const result = await successfulApiCall({ endpoint: 'users/get-following-users-by-birthday', parameters, user: viewer });
+		assert.strictEqual(result.length, 3);
+		assert.ok(result.every(item => item.birthday === '2026-03-01'));
+		assert.deepStrictEqual(result.map(item => item.id), [...result.map(item => item.id)].sort());
+		for (let offset = 0; offset < result.length; offset++) {
+			const page = await successfulApiCall({ endpoint: 'users/get-following-users-by-birthday', parameters: { ...parameters, limit: 1, offset }, user: viewer });
+			assert.strictEqual(page[0].id, result[offset].id);
+		}
+	});
 });
