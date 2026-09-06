@@ -51,23 +51,25 @@ jobs:
         ref: refs/pull/${{ github.event.number }}/merge
         path: head
         submodules: true
-    - name: Setup pnpm
+    - name: Setup base pnpm
       uses: pnpm/action-setup@v6.0.9
       with:
-        package_json_file: head/package.json
+        package_json_file: base/package.json
+        dest: ~/setup-pnpm-base
     - name: Setup libvips
       uses: ./head/.github/actions/setup-libvips
-    - name: Use Node.js
-      uses: actions/setup-node@v7.0.0
+    - name: Setup base mise
+      uses: jdx/mise-action@v2
       with:
-        node-version-file: 'head/.node-version'
-        cache: 'pnpm'
-        cache-dependency-path: |
-          base/pnpm-lock.yaml
-          head/pnpm-lock.yaml
+        working_directory: base
+    - name: Record base Node runtime
+      working-directory: base
+      run: |
+        echo "MK_MEMORY_BASE_NODE=$(mise which node)" >> "$GITHUB_ENV"
+        echo "MK_MEMORY_BASE_PATH=$PATH" >> "$GITHUB_ENV"
     - name: Install base dependencies
       working-directory: base
-      run: pnpm i --frozen-lockfile
+      run: mise exec -- pnpm i --frozen-lockfile
     - name: Check base pnpm-lock.yaml
       working-directory: base
       run: git diff --exit-code pnpm-lock.yaml
@@ -75,13 +77,27 @@ jobs:
       working-directory: base
       run: |
         cp .github/misskey/test.yml .config/default.yml
-        pnpm compile-config
+        mise exec -- pnpm compile-config
     - name: Build base
       working-directory: base
-      run: pnpm build
+      run: mise exec -- pnpm build
+    - name: Setup head pnpm
+      uses: pnpm/action-setup@v6.0.9
+      with:
+        package_json_file: head/package.json
+        dest: ~/setup-pnpm-head
+    - name: Setup head mise
+      uses: jdx/mise-action@v2
+      with:
+        working_directory: head
+    - name: Record head Node runtime
+      working-directory: head
+      run: |
+        echo "MK_MEMORY_HEAD_NODE=$(mise which node)" >> "$GITHUB_ENV"
+        echo "MK_MEMORY_HEAD_PATH=$PATH" >> "$GITHUB_ENV"
     - name: Install head dependencies
       working-directory: head
-      run: pnpm i --frozen-lockfile
+      run: mise exec -- pnpm i --frozen-lockfile
     - name: Check head pnpm-lock.yaml
       working-directory: head
       run: git diff --exit-code pnpm-lock.yaml
@@ -89,10 +105,10 @@ jobs:
       working-directory: head
       run: |
         cp .github/misskey/test.yml .config/default.yml
-        pnpm compile-config
+        mise exec -- pnpm compile-config
     - name: Build head
       working-directory: head
-      run: pnpm build
+      run: mise exec -- pnpm build
     - name: Measure backend memory usage
       working-directory: head
       env:
@@ -103,7 +119,7 @@ jobs:
         # 計測ハーネスはhead側のものを両方に使うが、成果物はrunnerのworkspace直下に出す
         MK_MEMORY_HEAP_SNAPSHOT_OUTPUT_DIR: ${{ github.workspace }}
       run: >-
-        pnpm --filter diagnostics-backend run inspect
+        mise exec -- pnpm --filter diagnostics-backend run inspect
         "$GITHUB_WORKSPACE/base" "$GITHUB_WORKSPACE/head"
         "$GITHUB_WORKSPACE/memory-base.json" "$GITHUB_WORKSPACE/memory-head.json"
     - name: Upload base heap snapshot
