@@ -15,7 +15,7 @@ export type FrontendDiagnosticsMarkdownInput = {
 	bundle: {
 		base: CollectedBundleReport;
 		head: CollectedBundleReport;
-		baseStats: VisualizerReport;
+		baseStats: VisualizerReport | null;
 		headStats: VisualizerReport;
 		/** rollup-plugin-visualizer が出力したtreemap HTMLのartifact URL */
 		visualizerArtifactUrl: string;
@@ -229,7 +229,9 @@ export function renderFrontendDiagnosticsMarkdown(input: FrontendDiagnosticsMark
 		'',
 		renderFrontendChunkReport(bundle.base, bundle.head),
 		'',
-		renderVisualizerSummaryTable(collectVisualizerReport(bundle.baseStats), collectVisualizerReport(bundle.headStats)),
+		bundle.baseStats == null
+			? '_Module-level bundle comparison unavailable: the base predates visualizer instrumentation. Chunk sizes above remain comparable; the head treemap is available below._'
+			: renderVisualizerSummaryTable(collectVisualizerReport(bundle.baseStats), collectVisualizerReport(bundle.headStats)),
 		'',
 		`[Open treemap HTML](${bundle.visualizerArtifactUrl})`,
 		'',
