@@ -21,6 +21,8 @@ import { measureMemoryUntilStable } from './stability';
 import type { MemorySample } from '../types';
 
 export type MeasureBackendMemoryOptions = {
+	/** Node executable used to build the measured backend. */
+	nodePath?: string;
 	/** heap snapshotを取得するか (既定: MK_MEMORY_HEAP_SNAPSHOT) */
 	heapSnapshot?: boolean;
 	/** 取得したheap snapshotの保存先。未指定なら解析後に破棄する */
@@ -47,7 +49,7 @@ function resolveOptions(options: MeasureBackendMemoryOptions) {
  */
 export async function measureBackendMemory(backendDir: string, options: MeasureBackendMemoryOptions = {}): Promise<MemorySample> {
 	const settings = resolveOptions(options);
-	const serverProcess = forkBackendServer(backendDir);
+	const serverProcess = forkBackendServer(backendDir, options.nodePath);
 
 	// 起動完了メッセージを取りこぼさないよう、他のハンドラより先に待ち受ける
 	const serverReady = waitForServerReady(serverProcess, settings.startupTimeoutMs);
