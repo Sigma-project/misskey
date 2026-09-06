@@ -16,4 +16,8 @@ describe('birthday calendar', () => {
 			expect(getBirthdayCountdown(endString, begin)).toBe(days - 1);
 		}
 	});
+
+	test('formats date-only separators without UTC conversion', () => {
+		expect(formatBirthdayDate('2026-08-07')).toBe('8/7');
+	});
 });
