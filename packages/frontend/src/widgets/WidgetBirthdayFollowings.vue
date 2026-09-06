@@ -32,6 +32,7 @@ SPDX-License-Identifier: AGPL-3.0-only
 <script lang="ts" setup>
 import { computed, markRaw, ref, watch } from 'vue';
 import { useLowresTime } from '@/composables/use-lowres-time.js';
+import { getBirthdayRangeEnd } from '@/utility/birthday-calendar.js';
 import { isSeparatorNeeded, getSeparatorInfo } from '@/utility/timeline-date-separate.js';
 import { useWidgetPropsManager } from './widget.js';
 import type { WidgetComponentEmits, WidgetComponentExpose, WidgetComponentProps } from './widget.js';
@@ -93,18 +94,7 @@ nextDay.setHours(24, 0, 0, 0);
 let nextDayMidnightTime = nextDay.getTime();
 
 const begin = ref<Date>(new Date());
-const end = computed(() => {
-	switch (widgetProps.period) {
-		case '3day':
-			return new Date(begin.value.getTime() + 1000 * 60 * 60 * 24 * 3);
-		case 'week':
-			return new Date(begin.value.getTime() + 1000 * 60 * 60 * 24 * 7);
-		case 'month':
-			return new Date(begin.value.getTime() + 1000 * 60 * 60 * 24 * 30);
-		default:
-			return begin.value;
-	}
-});
+const end = computed(() => getBirthdayRangeEnd(begin.value, widgetProps.period));
 
 const birthdayUsersPaginator = markRaw(new Paginator('users/get-following-users-by-birthday', {
 	limit: 18,
