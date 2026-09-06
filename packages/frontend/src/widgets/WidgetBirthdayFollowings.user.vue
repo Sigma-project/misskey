@@ -27,6 +27,7 @@ import MkUserCardMini from '@/components/MkUserCardMini.vue';
 import * as os from '@/os.js';
 import { i18n } from '@/i18n.js';
 import { useLowresTime } from '@/composables/use-lowres-time.js';
+import { getBirthdayCountdown } from '@/utility/birthday-calendar.js';
 import { userPage, acct } from '@/filters/user.js';
 
 const props = defineProps<{
@@ -45,7 +46,7 @@ const birthdayDate = computed(() => {
 });
 
 const countdownDate = computed(() => {
-	const days = Math.floor((birthdayDate.value.getTime() - nowDate.value.getTime()) / (1000 * 60 * 60 * 24));
+	const days = getBirthdayCountdown(props.item.birthday, new Date(now.value));
 	if (days === 0) {
 		return i18n.ts.today;
 	} else if (days > 0) {
