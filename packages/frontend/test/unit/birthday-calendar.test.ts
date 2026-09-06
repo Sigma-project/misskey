@@ -20,4 +20,12 @@ describe('birthday calendar', () => {
 	test('formats date-only separators without UTC conversion', () => {
 		expect(formatBirthdayDate('2026-08-07')).toBe('8/7');
 	});
+
+	test('counts calendar dates across DST and year boundaries', () => {
+		expect(getBirthdayCountdown('2026-03-09', new Date(2026, 2, 8))).toBe(1);
+		expect(getBirthdayCountdown('2026-11-02', new Date(2026, 10, 1))).toBe(1);
+		expect(getBirthdayCountdown('2027-01-01', new Date(2026, 11, 31))).toBe(1);
+		expect(getBirthdayCountdown('2026-08-07', new Date(2026, 7, 7, 23))).toBe(0);
+		expect(getBirthdayCountdown('2026-08-06', new Date(2026, 7, 7))).toBe(-1);
+	});
 });
