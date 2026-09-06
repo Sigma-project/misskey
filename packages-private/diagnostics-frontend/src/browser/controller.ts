@@ -89,7 +89,7 @@ export class HeadlessChromeController {
 
 			const page = await context.newPage();
 			const cdp = await context.newCDPSession(page);
-			return new HeadlessChromeController(browser, context, page, cdp, options);
+			return new HeadlessChromeController(browser, context, page, cdp, options, label === 'base');
 		} catch (error) {
 			await browser.close().catch(() => undefined);
 			throw error;
