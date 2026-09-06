@@ -21,6 +21,8 @@ on:
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
       - .node-version
+      - mise.toml
+      - .github/actions/setup-libvips/**
       - .github/misskey/test.yml
       - packages-private/diagnostics-shared/**
       - packages-private/diagnostics-frontend/**
@@ -76,16 +78,26 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6.0.9
         with:
-          package_json_file: head/package.json
+          package_json_file: base/package.json
+          dest: ~/setup-pnpm-base
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7.0.0
+      - name: Setup libvips
+        uses: ./head/.github/actions/setup-libvips
+
+      - name: Setup mise for base
+        uses: jdx/mise-action@v2
         with:
-          node-version-file: head/.node-version
-          cache: pnpm
-          cache-dependency-path: |
-            base/pnpm-lock.yaml
-            head/pnpm-lock.yaml
+          working_directory: base
+
+      - name: Record base runtime
+        working-directory: base
+        run: |
+          echo "FRONTEND_DIAGNOSTICS_BASE_PATH=$PATH" >> "$GITHUB_ENV"
+
+      - name: Configure sharp source builds
+        run: |
+          echo 'SHARP_FORCE_GLOBAL_LIBVIPS=1' >> "$GITHUB_ENV"
+          echo 'npm_config_build_from_source=true' >> "$GITHUB_ENV"
 
       - name: Prepare report output
         shell: bash
@@ -105,6 +117,17 @@ jobs:
           FRONTEND_BUNDLE_VISUALIZER: 'true'
           FRONTEND_BUNDLE_VISUALIZER_FILE: ${{ runner.temp }}/frontend-diagnostics/base-bundle-stats.json
         run: pnpm build
+
+      - name: Setup pnpm for head
+        uses: pnpm/action-setup@v6.0.9
+        with:
+          package_json_file: head/package.json
+          dest: ~/setup-pnpm-head
+
+      - name: Setup mise for head
+        uses: jdx/mise-action@v2
+        with:
+          working_directory: head
 
       - name: Install dependencies for head
         working-directory: head
