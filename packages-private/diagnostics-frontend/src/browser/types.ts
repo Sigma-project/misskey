@@ -88,7 +88,7 @@ export type NetworkSummary = {
 };
 
 export type TabMemory = {
-	totalBytes: number;
+	totalBytes: number | null;
 };
 
 export type BrowserDiagnostics = {
