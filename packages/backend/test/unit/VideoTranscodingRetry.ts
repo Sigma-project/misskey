@@ -33,4 +33,19 @@ describe('video transcoding retry', () => {
 		expect(ctx.repository.update).not.toHaveBeenCalled();
 		expect(ctx.queue.createVideoTranscodingJob).not.toHaveBeenCalled();
 	});
+
+	test('waits for removal to finish before marking pending and enqueuing', async () => {
+		let finish!: () => void;
+		const pending = new Promise<void>(resolve => { finish = resolve; });
+		const ctx = harness(() => pending);
+		const retry = ctx.run();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(ctx.repository.update).not.toHaveBeenCalled();
+		expect(ctx.queue.createVideoTranscodingJob).not.toHaveBeenCalled();
+		finish();
+		await retry;
+		expect(ctx.repository.update).toHaveBeenCalledWith('video1', { transcodingStatus: 'pending' });
+		expect(ctx.queue.createVideoTranscodingJob).toHaveBeenCalledWith('video1');
+	});
 });
