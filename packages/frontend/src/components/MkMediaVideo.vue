@@ -110,6 +110,7 @@ SPDX-License-Identifier: AGPL-3.0-only
 </template>
 
 <script lang="ts" setup>
+import { attachNativeHlsSource } from '@/utility/attach-native-hls-source.js';
 import { ref, useTemplateRef, computed, watch, onDeactivated, onActivated, onMounted, onUnmounted } from 'vue';
 import * as Misskey from 'misskey-js';
 import type { MenuItem } from '@/types/menu.js';
@@ -424,6 +425,7 @@ let stopVideoElWatch: () => void;
 let hls: { destroy: () => void } | null = null;
 // コンポーネント破棄/非活性後に遅延した dynamic import の attach を防ぐためのフラグ
 let hlsDisposed = false;
+let cleanupNativeHls: (() => void) | null = null;
 
 // video要素にソースをアタッチする。
 // HLS manifestがあればネイティブHLS or hls.jsで再生し、不可ならオリジナルにフォールバックする。
@@ -435,7 +437,8 @@ async function setupVideoSource(el: HTMLVideoElement) {
 
 	// Safari等: ネイティブHLS
 	if (el.canPlayType('application/vnd.apple.mpegurl') !== '') {
-		el.src = manifest;
+		cleanupNativeHls?.();
+		cleanupNativeHls = attachNativeHlsSource(el, manifest, props.video.url);
 		return;
 	}
 
