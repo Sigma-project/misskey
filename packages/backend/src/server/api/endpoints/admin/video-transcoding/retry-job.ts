@@ -60,7 +60,8 @@ export default class extends Endpoint<typeof meta, typeof paramDef> { // eslint-
 			// jobId は fileId と一致するため、再投入前に既存ジョブを除去する
 			const existing = await this.queueService.videoTranscodingQueue.getJob(ps.fileId);
 			if (existing != null) {
-				await existing.remove().catch(() => { /* ignore */ });
+				// A locked active job must remain cancelled until its worker has stopped.
+				await existing.remove();
 			}
 
 			await this.driveFilesRepository.update(file.id, { transcodingStatus: 'pending' });
