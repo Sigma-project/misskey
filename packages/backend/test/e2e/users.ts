@@ -8,8 +8,9 @@ process.env.NODE_ENV = 'test';
 import * as assert from 'assert';
 import { beforeAll, beforeEach, describe, test } from 'vitest';
 import { inspect } from 'node:util';
-import { api, post, role, signup, successfulApiCall, uploadFile } from '../utils.js';
+import { api, initTestDb, post, role, signup, successfulApiCall, uploadFile } from '../utils.js';
 import type * as misskey from 'misskey-js';
+import { BirthdayIndex1767169026317 } from '../../migration/1767169026317-birthday-index.js';
 import { DEFAULT_POLICIES } from '@/core/RoleService.js';
 
 describe('ユーザー', () => {
@@ -891,4 +892,37 @@ describe('ユーザー', () => {
 	test.todo('を管理人として確認することができる(admin/show-user)');
 	test.todo('を管理人として確認することができる(admin/show-users)');
 	test.todo('をサーバー向けに取得することができる(federation/users)');
+});
+
+
+describe('Following birthdays', () => {
+	let viewer: misskey.entities.SignupResponse;
+	const users = new Map<string, misskey.entities.SignupResponse>();
+
+	beforeAll(async () => {
+		// Schema synchronization omits expression indexes and functions created by migrations.
+		const connection = await initTestDb(true);
+		const queryRunner = connection.createQueryRunner();
+		try {
+			await queryRunner.query('CREATE INDEX IF NOT EXISTS "IDX_de22cd2b445eee31ae51cdbe99" ON "user_profile" (substr("birthday", 6, 5))');
+			await new BirthdayIndex1767169026317().up(queryRunner);
+		} finally {
+			await queryRunner.release();
+			await connection.destroy();
+		}
+
+		viewer = await signup({ username: 'birthdayviewer' });
+		for (const [username, birthday] of [
+			['birthdaydecember', '2000-12-31'],
+			['birthdayjanuary', '2000-01-01'],
+			['birthdayleap', '2000-02-29'],
+			['birthdaymarch', '2000-03-01'],
+			['birthdaymarchtwo', '2000-03-01'],
+		] as const) {
+			const user = await signup({ username });
+			await successfulApiCall({ endpoint: 'i/update', parameters: { birthday }, user });
+			await successfulApiCall({ endpoint: 'following/create', parameters: { userId: user.id }, user: viewer });
+			users.set(username, user);
+		}
+	});
 });
