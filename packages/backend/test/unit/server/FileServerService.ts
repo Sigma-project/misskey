@@ -531,7 +531,7 @@ describe('FileServerService', () => {
 			expect(res.headers['cache-control']).toBe('max-age=31536000, immutable');
 		});
 
-		test('GET /files/:key thumbnail は mediaProxy/static.webp にリダイレクトする', async () => {
+		test('GET /files/:key thumbnail は mediaProxy/static.jxl にリダイレクトする', async () => {
 			const accessKey = randomString();
 			const thumbnailKey = randomString();
 			await insertDriveFile({
@@ -550,7 +550,7 @@ describe('FileServerService', () => {
 
 			expect(res.statusCode).toBe(301);
 			expect(res.headers['cache-control']).toBe('max-age=31536000, immutable');
-			expect(res.headers.location).toContain(`${config.mediaProxy}/static.webp`);
+			expect(res.headers.location).toContain(`${config.mediaProxy}/static.jxl`);
 			expect(res.headers.location).toContain('static=1');
 		});
 
