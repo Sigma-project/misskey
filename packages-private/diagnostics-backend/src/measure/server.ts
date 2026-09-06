@@ -129,7 +129,7 @@ export async function triggerGc(serverProcess: ChildProcess, timeout: number) {
 	// 送信前にlistenerを張らないと、応答を取りこぼす可能性がある
 	const ok = waitForMessage(serverProcess, isGcMessage, 'GC completion', timeout);
 
-	serverProcess.send('gc');
+	serverProcess.send(legacyServers.has(serverProcess) ? 'diagnostics gc' : 'gc');
 
 	const message = await ok;
 	if (message === 'gc unavailable') {
