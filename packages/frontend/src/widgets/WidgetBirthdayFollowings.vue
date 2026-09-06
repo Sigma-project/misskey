@@ -102,6 +102,7 @@ const birthdayUsersPaginator = markRaw(new Paginator('users/get-following-users-
 	computedParams: computed(() => {
 		if (widgetProps.period === 'today') {
 			return {
+				year: begin.value.getFullYear(),
 				birthday: {
 					month: begin.value.getMonth() + 1,
 					day: begin.value.getDate(),
@@ -109,6 +110,7 @@ const birthdayUsersPaginator = markRaw(new Paginator('users/get-following-users-
 			};
 		} else {
 			return {
+				year: begin.value.getFullYear(),
 				birthday: {
 					begin: {
 						month: begin.value.getMonth() + 1,
