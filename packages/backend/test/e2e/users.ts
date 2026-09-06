@@ -954,4 +954,9 @@ describe('Following birthdays', () => {
 		const march = await successfulApiCall({ endpoint: 'users/get-following-users-by-birthday', parameters: { year: 2028, birthday: { month: 3, day: 1 } }, user: viewer });
 		assert.strictEqual(march.length, 2);
 	});
+
+	test('continues to accept requests without a calendar year', async () => {
+		const result = await successfulApiCall({ endpoint: 'users/get-following-users-by-birthday', parameters: { birthday: { month: 12, day: 31 } }, user: viewer });
+		assert.strictEqual(result[0].id, users.get('birthdaydecember')!.id);
+	});
 });
