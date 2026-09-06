@@ -105,31 +105,41 @@ export default class extends Endpoint<typeof meta, typeof paramDef> { // eslint-
 				.andWhere('following.followerId = :userId', { userId: me.id })
 				.innerJoin(this.userProfilesRepository.metadata.targetName, 'followeeProfile', 'followeeProfile.userId = following.followeeId');
 
-			if (Object.hasOwn(ps.birthday, 'begin') && Object.hasOwn(ps.birthday, 'end')) {
-				const range = ps.birthday as { begin: { month: number; day: number }; end: { month: number; day: number }; };
+			const range = 'begin' in ps.birthday ? ps.birthday : { begin: ps.birthday, end: ps.birthday };
+			const begin = range.begin.month * 100 + range.begin.day;
+			const end = range.end.month * 100 + range.end.day;
+			const today = new Date();
+			const year = ps.year ?? today.getFullYear() + (begin < (today.getMonth() + 1) * 100 + today.getDate() ? 1 : 0);
+			const leapDayYear = year + (begin > end && begin > 301 ? 1 : 0);
+			const isLeapYear = leapDayYear % 4 === 0 && (leapDayYear % 100 !== 0 || leapDayYear % 400 === 0);
+			const rawBirthday = 'get_birthday_date(followeeProfile.birthday)';
+			const birthday = isLeapYear ? rawBirthday : `CASE WHEN ${rawBirthday} = 229 THEN 301 ELSE ${rawBirthday} END`;
 
-				// 誕生日は mmdd の形式の最大4桁の数字（例: 8月30日 → 830）でインデックスが効くようになっているので、その形式に変換
-				const begin = range.begin.month * 100 + range.begin.day;
-				const end = range.end.month * 100 + range.end.day;
-
-				if (begin <= end) {
-					query.andWhere('get_birthday_date(followeeProfile.birthday) BETWEEN :begin AND :end', { begin, end });
-				} else {
-					// 12/31 から 1/1 の範囲を取得するために OR で対応
-					query.andWhere(new Brackets(qb => {
-						qb.where('get_birthday_date(followeeProfile.birthday) BETWEEN :begin AND 1231', { begin });
-						qb.orWhere('get_birthday_date(followeeProfile.birthday) BETWEEN 101 AND :end', { end });
-					}));
+			// Keep indexed bounds for ordinary birthdays and select leap-day birthdays by their observed date.
+			query.andWhere(new Brackets(qb => {
+				qb.where(new Brackets(dates => {
+					if (begin <= end) {
+						dates.where(`${rawBirthday} BETWEEN :begin AND :end`, { begin, end });
+					} else {
+						dates.where(`${rawBirthday} BETWEEN :begin AND 1231`, { begin });
+						dates.orWhere(`${rawBirthday} BETWEEN 101 AND :end`, { end });
+					}
+				}));
+				if (!isLeapYear) {
+					qb.andWhere(`${rawBirthday} != 229`);
+					if (begin <= end ? begin <= 301 && end >= 301 : begin <= 301 || end >= 301) {
+						qb.orWhere(`${rawBirthday} BETWEEN 229 AND 229`);
+					}
 				}
-			} else {
-				const { month, day } = ps.birthday as { month: number; day: number };
-				// なぜか get_birthday_date() = :birthday だとインデックスが効かないので、BETWEEN で対応
-				query.andWhere('get_birthday_date(followeeProfile.birthday) BETWEEN :birthday AND :birthday', { birthday: month * 100 + day });
-			}
+			}));
 
 			query.select('following.followeeId', 'user_id');
-			query.addSelect('get_birthday_date(followeeProfile.birthday)', 'birthday_date');
-			query.orderBy('birthday_date', 'ASC');
+			query.addSelect(birthday, 'birthday_date');
+			if (begin > end) {
+				query.orderBy(`CASE WHEN ${birthday} >= :begin THEN 0 ELSE 1 END`, 'ASC');
+			}
+			query.addOrderBy('birthday_date', 'ASC');
+			query.addOrderBy('following.followeeId', 'ASC');
 
 			const birthdayUsers = await query
 				.offset(ps.offset).limit(ps.limit)
@@ -145,16 +155,8 @@ export default class extends Endpoint<typeof meta, typeof paramDef> { // eslint-
 
 			return birthdayUsers
 				.map(item => {
-					const birthday = new Date();
-					birthday.setHours(0, 0, 0, 0);
-					// item.birthday_date は mmdd の形式の最大4桁の数字（例: 8月30日 → 830）で出力されるので、日付に戻してDateオブジェクトに設定
-					birthday.setMonth(Math.floor(item.birthday_date / 100) - 1, item.birthday_date % 100);
-
-					if (birthday.getTime() < new Date().setHours(0, 0, 0, 0)) {
-						birthday.setFullYear(new Date().getFullYear() + 1);
-					}
-
-					const birthdayStr = `${birthday.getFullYear()}-${(birthday.getMonth() + 1).toString().padStart(2, '0')}-${(birthday.getDate()).toString().padStart(2, '0')}`;
+					const occurrenceYear = year + (begin > end && item.birthday_date < begin ? 1 : 0);
+					const birthdayStr = `${occurrenceYear.toString().padStart(4, '0')}-${Math.floor(item.birthday_date / 100).toString().padStart(2, '0')}-${(item.birthday_date % 100).toString().padStart(2, '0')}`;
 					return {
 						id: item.user_id,
 						birthday: birthdayStr,
