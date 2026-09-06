@@ -13,6 +13,12 @@ export class VideoTranscoding1781340911000 {
         await queryRunner.query(`ALTER TABLE "drive_file" ADD "transcodingPrefix" character varying(256)`);
         await queryRunner.query(`ALTER TABLE "drive_file" ADD "transcodingStoredInternal" boolean`);
         await queryRunner.query(`ALTER TABLE "drive_file" ADD "transcodingVariants" jsonb NOT NULL DEFAULT '[]'`);
+        await queryRunner.query(`COMMENT ON COLUMN "drive_file"."hlsManifestUrl" IS 'The URL of the HLS master manifest for the transcoded video.'`);
+        await queryRunner.query(`COMMENT ON COLUMN "drive_file"."dashManifestUrl" IS 'The URL of the DASH manifest for the transcoded video.'`);
+        await queryRunner.query(`COMMENT ON COLUMN "drive_file"."transcodingStatus" IS 'The transcoding status: pending/processing/completed/failed/skipped.'`);
+        await queryRunner.query(`COMMENT ON COLUMN "drive_file"."transcodingPrefix" IS 'The storage prefix (directory) holding the transcoded stream artifacts.'`);
+        await queryRunner.query(`COMMENT ON COLUMN "drive_file"."transcodingStoredInternal" IS 'Whether the transcoded artifacts are stored on the internal storage (independent of the original file).'`);
+        await queryRunner.query(`COMMENT ON COLUMN "drive_file"."transcodingVariants" IS 'The descriptors of the transcoded variants.'`);
         await queryRunner.query(`ALTER TABLE "meta" ADD "enableVideoTranscoding" boolean NOT NULL DEFAULT false`);
         await queryRunner.query(`ALTER TABLE "meta" ADD "videoTranscodeMaxFileSize" bigint NOT NULL DEFAULT '0'`);
         await queryRunner.query(`ALTER TABLE "meta" ADD "videoTranscodeMaxDuration" integer NOT NULL DEFAULT 0`);
