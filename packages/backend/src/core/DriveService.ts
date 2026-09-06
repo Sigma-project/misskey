@@ -721,7 +721,7 @@ export class DriveService {
 		// Capability(libsvtav1/HLS)が無ければ投入しない
 		this.ffmpegCapabilityService.getCapabilities().then(caps => {
 			if (!caps.av1 || !caps.hls) return;
-			this.queueService.createVideoTranscodingJob(file.id);
+			return this.queueService.createVideoTranscodingJob(file.id);
 		}).catch(err => {
 			this.registerLogger.warn(`Failed to enqueue video transcoding job for ${file.id}`, err as Error);
 		});
