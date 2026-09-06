@@ -19,6 +19,7 @@ import { ImageProcessingService } from '@/core/ImageProcessingService.js';
 import { InternalStorageService } from '@/core/InternalStorageService.js';
 import { IdService } from '@/core/IdService.js';
 import { LoggerService } from '@/core/LoggerService.js';
+import { WasmVipsService } from '@/core/WasmVipsService.js';
 import { VideoProcessingService } from '@/core/VideoProcessingService.js';
 import { loadConfig, type Config } from '@/config.js';
 import { MiDriveFile } from '@/models/DriveFile.js';
@@ -154,6 +155,7 @@ describe('FileServerService', () => {
 		const httpRequestService = new HttpRequestService(config);
 		const downloadService = new DownloadService(config, httpRequestService, loggerService);
 		const imageProcessingService = new ImageProcessingService();
+		const wasmVipsService = new WasmVipsService();
 		const videoProcessingService = new VideoProcessingService(config, imageProcessingService);
 		internalStorageService = new InternalStorageService(config);
 		idService = new IdService(config);
@@ -163,6 +165,7 @@ describe('FileServerService', () => {
 			fileInfoService,
 			downloadService,
 			imageProcessingService,
+			wasmVipsService,
 			videoProcessingService,
 			internalStorageService,
 			loggerService,
@@ -187,6 +190,7 @@ describe('FileServerService', () => {
 			fileInfoService,
 			downloadService,
 			imageProcessingService,
+			wasmVipsService,
 			videoProcessingService,
 			internalStorageService,
 			loggerService,
