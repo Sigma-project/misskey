@@ -5,7 +5,7 @@
 
 import { formatBytes, formatColoredDelta, formatNumber } from 'diagnostics-shared/format';
 import { renderHeapSnapshotTable, type HeapSnapshotReport } from 'diagnostics-shared/heap-snapshot';
-import { renderMetricComparisonTable } from 'diagnostics-shared/metric-table';
+import { renderMetricComparisonTable, type MetricComparisonRow } from 'diagnostics-shared/metric-table';
 import { renderFrontendChunkReport } from './bundle/chunk-report';
 import { collectVisualizerReport, renderVisualizerSummaryTable, type VisualizerReport } from './bundle/visualizer';
 import type { CollectedBundleReport } from './bundle/manifest';
@@ -34,10 +34,11 @@ function resourceTypeSampleBytes(sample: BrowserMeasurementSample, resourceTypes
 }
 
 function renderBrowserSummaryTable(base: BrowserMetricsReport, head: BrowserMetricsReport) {
-	return renderMetricComparisonTable(
+	const hasTabMemory = [...base.samples, ...head.samples].every(sample => sample.performance.tabMemory.totalBytes != null);
+	const table = renderMetricComparisonTable(
 		base.samples,
 		head.samples,
-		[{
+		([{
 			label: '**Requests**',
 			getValue: sample => sample.network.requestCount,
 			formatValue: formatNumber,
@@ -129,12 +130,13 @@ function renderBrowserSummaryTable(base: BrowserMetricsReport, head: BrowserMetr
 			absoluteThreshold: 1,
 		}, {
 			label: '**Page-attributed memory**',
-			getValue: sample => sample.performance.tabMemory.totalBytes,
+			getValue: sample => sample.performance.tabMemory.totalBytes ?? Number.NaN,
 			formatValue: formatBytes,
 			absoluteThreshold: 10_000,
-		}],
+		}] satisfies MetricComparisonRow<BrowserMeasurementSample>[]).filter(row => hasTabMemory || row.label !== '**Page-attributed memory**'),
 		{ onlySignificantChanges: true },
 	);
+	return hasTabMemory ? table : `${table}\n\n_Page-attributed memory comparison unavailable: the base does not expose the browser memory API. V8 heap snapshots are still compared below._`;
 }
 
 function renderResourceTypeTable(base: BrowserMetricsReport, head: BrowserMetricsReport) {
