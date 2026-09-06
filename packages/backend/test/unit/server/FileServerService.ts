@@ -717,7 +717,7 @@ describe('FileServerService', () => {
 			expect(res.statusCode).toBe(200);
 			expect(res.headers['content-type']).toBe('image/jxl');
 			expect(res.headers['cache-control']).toBe('max-age=31536000, immutable');
-			expect(res.headers['content-disposition'] ?? '').toContain('dummy.png.jxl');
+			expect(res.headers['content-disposition'] ?? '').toContain('dummy.jxl');
 		});
 
 		test('GET /proxy/:url* svg を JXL に変換する', async () => {
