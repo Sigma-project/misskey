@@ -170,6 +170,7 @@ function isTerminal(phase: Phase): boolean {
 
 // 終端ジョブを30秒後に一覧から除去する
 const removalTimers = new Map<string, number>();
+
 function scheduleRemoval(fileId: string) {
 	const existing = removalTimers.get(fileId);
 	if (existing) window.clearTimeout(existing);
