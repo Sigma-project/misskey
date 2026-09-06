@@ -690,7 +690,7 @@ describe('FileServerService', () => {
 			expect(res.headers['content-disposition'] ?? '').toContain('dummy.png.jxl');
 		});
 
-		test('GET /proxy/:url* static で webp を返す', async () => {
+		test('GET /proxy/:url* static で JXL を返す', async () => {
 			const res = await fastify.inject({
 				method: 'GET',
 				url: `/proxy/any?url=${encodeURIComponent(remotePngUrl)}&static=1`,
@@ -700,9 +700,9 @@ describe('FileServerService', () => {
 			});
 
 			expect(res.statusCode).toBe(200);
-			expect(res.headers['content-type']).toBe('image/webp');
+			expect(res.headers['content-type']).toBe('image/jxl');
 			expect(res.headers['cache-control']).toBe('max-age=31536000, immutable');
-			expect(res.headers['content-disposition'] ?? '').toContain('dummy.png.webp');
+			expect(res.headers['content-disposition'] ?? '').toContain('dummy.png.jxl');
 		});
 
 		test('GET /proxy/:url* preview で webp を返す', async () => {
