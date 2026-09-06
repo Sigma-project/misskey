@@ -925,4 +925,14 @@ describe('Following birthdays', () => {
 			users.set(username, user);
 		}
 	});
+
+	test('paginates wrapped ranges in occurrence order in the requester calendar', async () => {
+		const parameters = { year: 2025, birthday: { begin: { month: 12, day: 31 }, end: { month: 1, day: 1 } }, limit: 1 };
+		const first = await successfulApiCall({ endpoint: 'users/get-following-users-by-birthday', parameters, user: viewer });
+		const second = await successfulApiCall({ endpoint: 'users/get-following-users-by-birthday', parameters: { ...parameters, offset: 1 }, user: viewer });
+		assert.strictEqual(first[0].id, users.get('birthdaydecember')!.id);
+		assert.strictEqual(first[0].birthday, '2025-12-31');
+		assert.strictEqual(second[0].id, users.get('birthdayjanuary')!.id);
+		assert.strictEqual(second[0].birthday, '2026-01-01');
+	});
 });
