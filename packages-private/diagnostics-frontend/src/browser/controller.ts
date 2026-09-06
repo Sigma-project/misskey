@@ -164,14 +164,16 @@ export class HeadlessChromeController {
 	}
 
 	public async collectTabMemory(): Promise<TabMemory> {
-		const userAgentSpecificMemory = await this.evaluate<{ bytes?: number }>(`(async () => {
+		const userAgentSpecificMemory = await this.evaluate<{ bytes?: number; unavailable?: boolean }>(`(async () => {
 			const measureMemory = performance.measureUserAgentSpecificMemory;
-			if (typeof measureMemory !== 'function') return {};
+			if (typeof measureMemory !== 'function') return { unavailable: true };
 			const result = await measureMemory.call(performance);
 			return { bytes: result.bytes };
 		})()`, 60_000);
 
-		const userAgentSpecificBytes = userAgentSpecificMemory?.bytes;
+		if (userAgentSpecificMemory.unavailable && this.allowUnavailableTabMemory) return { totalBytes: null };
+
+		const userAgentSpecificBytes = userAgentSpecificMemory.bytes;
 		if (!Number.isFinite(userAgentSpecificBytes)) {
 			throw new Error('performance.measureUserAgentSpecificMemory() did not return finite bytes');
 		}
