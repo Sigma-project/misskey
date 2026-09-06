@@ -38,7 +38,7 @@ SPDX-License-Identifier: AGPL-3.0-only
 			controls
 			@keydown.prevent
 		>
-			<source :src="video.url">
+			<source v-if="!video.hlsManifestUrl" :src="video.url">
 		</video>
 		<i class="ti ti-eye-off" :class="$style.hide" @click="hide = true"></i>
 		<div :class="$style.indicators">
@@ -59,7 +59,7 @@ SPDX-License-Identifier: AGPL-3.0-only
 			@keydown.prevent
 			@click.self="togglePlayPause"
 		>
-			<source :src="video.url">
+			<source v-if="!video.hlsManifestUrl" :src="video.url">
 		</video>
 		<button v-if="isReady && !isPlaying" class="_button" :class="$style.videoOverlayPlayButton" @click="togglePlayPause"><i class="ti ti-player-play-filled"></i></button>
 		<div v-else-if="!isActuallyPlaying" :class="$style.videoLoading">
@@ -110,7 +110,8 @@ SPDX-License-Identifier: AGPL-3.0-only
 </template>
 
 <script lang="ts" setup>
-import { ref, useTemplateRef, computed, watch, onDeactivated, onActivated, onMounted } from 'vue';
+import { attachNativeHlsSource } from '@/utility/attach-native-hls-source.js';
+import { ref, useTemplateRef, computed, watch, onDeactivated, onActivated, onMounted, onUnmounted } from 'vue';
 import * as Misskey from 'misskey-js';
 import type { MenuItem } from '@/types/menu.js';
 import type { Keymap } from '@/utility/hotkey.js';
@@ -124,6 +125,7 @@ import hasAudio from '@/utility/media-has-audio.js';
 import MkMediaRange from '@/components/MkMediaRange.vue';
 import { $i, iAmModerator } from '@/i.js';
 import { prefer } from '@/preferences.js';
+import { shouldHideFileByDefault, canRevealFile } from '@/utility/sensitive-file.js';
 
 const props = defineProps<{
 	video: Misskey.entities.DriveFile;
@@ -172,19 +174,16 @@ const keymap = {
 // PlayerElもしくはその子要素にフォーカスがあるかどうか
 function hasFocus() {
 	if (!playerEl.value) return false;
+
 	return playerEl.value === window.document.activeElement || playerEl.value.contains(window.document.activeElement);
 }
 
 // eslint-disable-next-line vue/no-setup-props-reactivity-loss
-const hide = ref((prefer.s.nsfw === 'force' || prefer.s.dataSaver.media) ? true : (props.video.isSensitive && prefer.s.nsfw !== 'ignore'));
+const hide = ref(shouldHideFileByDefault(props.video));
 
 async function reveal() {
-	if (props.video.isSensitive && prefer.s.confirmWhenRevealingSensitiveMedia) {
-		const { canceled } = await os.confirm({
-			type: 'question',
-			text: i18n.ts.sensitiveMediaRevealConfirm,
-		});
-		if (canceled) return;
+	if (!(await canRevealFile(props.video))) {
+		return;
 	}
 
 	hide.value = false;
@@ -193,7 +192,7 @@ async function reveal() {
 // Menu
 const menuShowing = ref(false);
 
-function showMenu(ev: MouseEvent) {
+function showMenu(ev: PointerEvent) {
 	const menu: MenuItem[] = [
 		// TODO: 再生キューに追加
 		{
@@ -422,6 +421,63 @@ let onceInit = false;
 let mediaTickFrameId: number | null = null;
 let stopVideoElWatch: () => void;
 
+// hls.js インスタンス（HLS再生時のみ）
+let hls: { destroy: () => void } | null = null;
+// コンポーネント破棄/非活性後に遅延した dynamic import の attach を防ぐためのフラグ
+let hlsDisposed = false;
+let cleanupNativeHls: (() => void) | null = null;
+
+// video要素にソースをアタッチする。
+// HLS manifestがあればネイティブHLS or hls.jsで再生し、不可ならオリジナルにフォールバックする。
+async function setupVideoSource(el: HTMLVideoElement) {
+	const manifest = props.video.hlsManifestUrl;
+	if (manifest == null) return; // manifestが無ければ<source>のvideo.urlを使う
+
+	hlsDisposed = false;
+
+	// Safari等: ネイティブHLS
+	if (el.canPlayType('application/vnd.apple.mpegurl') !== '') {
+		cleanupNativeHls?.();
+		cleanupNativeHls = attachNativeHlsSource(el, manifest, props.video.url);
+		return;
+	}
+
+	try {
+		const { default: Hls } = await import('hls.js');
+		// import 完了までに破棄/非活性化されていたら attach しない（リーク防止）
+		if (hlsDisposed) return;
+		if (Hls.isSupported()) {
+			const instance = new Hls({ enableWorker: true });
+			instance.on(Hls.Events.ERROR, (_event, data) => {
+				// 致命的エラー時はオリジナル動画にフォールバック
+				if (data.fatal) {
+					instance.destroy();
+					if (hls === instance) hls = null;
+					el.src = props.video.url;
+				}
+			});
+			instance.loadSource(manifest);
+			instance.attachMedia(el);
+			hls = instance;
+		} else {
+			// hls.js自体が非対応の環境はオリジナルにフォールバック
+			el.src = props.video.url;
+		}
+	} catch {
+		el.src = props.video.url;
+	}
+}
+
+function teardownHls() {
+	hlsDisposed = true;
+	cleanupNativeHls?.();
+	cleanupNativeHls = null;
+	if (hls) {
+		hls.destroy();
+		hls = null;
+	}
+}
+
 function init() {
 	if (onceInit) return;
 	onceInit = true;
@@ -429,6 +485,8 @@ function init() {
 	stopVideoElWatch = watch(videoEl, () => {
 		if (videoEl.value) {
 			isReady.value = true;
+
+				setupVideoSource(videoEl.value);
 
 			function updateMediaTick() {
 				if (videoEl.value) {
@@ -522,6 +580,7 @@ onDeactivated(() => {
 	bufferedEnd.value = 0;
 	hide.value = (prefer.s.nsfw === 'force' || prefer.s.dataSaver.media) ? true : (props.video.isSensitive && prefer.s.nsfw !== 'ignore');
 	stopVideoElWatch();
+	teardownHls();
 	onceInit = false;
 	if (mediaTickFrameId) {
 		window.cancelAnimationFrame(mediaTickFrameId);
@@ -531,6 +590,11 @@ onDeactivated(() => {
 		window.clearTimeout(controlStateTimer);
 		controlStateTimer = null;
 	}
+});
+
+onUnmounted(() => {
+	// KeepAlive外で直接アンマウントされた場合も hls.js を確実に破棄する
+	teardownHls();
 });
 </script>
 
@@ -708,7 +772,7 @@ onDeactivated(() => {
 	.controlButton {
 		padding: 6px;
 		border-radius: calc(var(--MI-radius) / 2);
-		transition: background-color .2s ease-in-out;
+		transition: background-color .15s ease;
 		font-size: 1.05rem;
 
 		&:hover {
@@ -761,6 +825,23 @@ onDeactivated(() => {
 			display: block;
 			flex-grow: 1;
 		}
+	}
+}
+
+@container (max-width: 300px) {
+	.videoControls {
+		grid-template-areas:
+			"left . right"
+			"seekbar seekbar seekbar";
+		grid-template-columns: auto 1fr auto;
+	}
+
+	.controlsTime {
+		display: none;
+	}
+
+	.controlsVolume {
+		display: none;
 	}
 }
 </style>

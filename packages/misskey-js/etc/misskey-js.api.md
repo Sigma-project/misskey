@@ -450,6 +450,18 @@ type AdminUpdateProxyAccountResponse = operations['admin___update-proxy-account'
 type AdminUpdateUserNoteRequest = operations['admin___update-user-note']['requestBody']['content']['application/json'];
 
 // @public (undocumented)
+type AdminVideoTranscodingCancelJobRequest = operations['admin___video-transcoding___cancel-job']['requestBody']['content']['application/json'];
+
+// @public (undocumented)
+type AdminVideoTranscodingListJobsRequest = operations['admin___video-transcoding___list-jobs']['requestBody']['content']['application/json'];
+
+// @public (undocumented)
+type AdminVideoTranscodingListJobsResponse = operations['admin___video-transcoding___list-jobs']['responses']['200']['content']['application/json'];
+
+// @public (undocumented)
+type AdminVideoTranscodingRetryJobRequest = operations['admin___video-transcoding___retry-job']['requestBody']['content']['application/json'];
+
+// @public (undocumented)
 type Announcement = components['schemas']['Announcement'];
 
 // @public (undocumented)
@@ -818,6 +830,26 @@ export type Channels = {
         };
         receives: null;
     };
+    videoTranscoding: {
+        params: null;
+        events: {
+            progress: (payload: {
+                fileId: string;
+                userId: string | null;
+                fileName: string;
+                phase: 'queued' | 'downloading' | 'probing' | 'encoding-av1' | 'encoding-vvc' | 'uploading' | 'done' | 'skipped' | 'failed';
+                percent: number;
+                overallPercent: number;
+                codec?: 'av1' | 'vvc';
+                fps?: number;
+                speed?: string;
+                message?: string;
+                startedAt: number;
+                updatedAt: number;
+            }) => void;
+        };
+        receives: null;
+    };
     reversi: {
         params: null;
         events: {
@@ -854,7 +886,14 @@ export type Channels = {
                 key: K;
                 value: ReversiGameDetailed[K];
             }) => void;
-            log: (payload: Record<string, unknown>) => void;
+            log: (payload: {
+                time: number;
+                player: boolean;
+                operation: 'put';
+                pos: number;
+            } & {
+                id: string | null;
+            }) => void;
         };
         receives: {
             putStone: {
@@ -1642,6 +1681,10 @@ declare namespace entities {
         AdminUpdateProxyAccountRequest,
         AdminUpdateProxyAccountResponse,
         AdminUpdateUserNoteRequest,
+        AdminVideoTranscodingCancelJobRequest,
+        AdminVideoTranscodingListJobsRequest,
+        AdminVideoTranscodingListJobsResponse,
+        AdminVideoTranscodingRetryJobRequest,
         AnnouncementsRequest,
         AnnouncementsResponse,
         AnnouncementsShowRequest,
@@ -2121,6 +2164,8 @@ declare namespace entities {
         UsersFollowingResponse,
         UsersGalleryPostsRequest,
         UsersGalleryPostsResponse,
+        UsersGetFollowingBirthdayUsersRequest,
+        UsersGetFollowingBirthdayUsersResponse,
         UsersGetFrequentlyRepliedUsersRequest,
         UsersGetFrequentlyRepliedUsersResponse,
         UsersListsCreateRequest,
@@ -2221,6 +2266,7 @@ declare namespace entities {
         MetaLite,
         MetaDetailedOnly,
         MetaDetailed,
+        MetaClientOptions,
         UserWebhook,
         SystemWebhook,
         AbuseReportNotificationRecipient,
@@ -2812,6 +2858,9 @@ type MeDetailed = components['schemas']['MeDetailed'];
 type MeDetailedOnly = components['schemas']['MeDetailedOnly'];
 
 // @public (undocumented)
+type MetaClientOptions = components['schemas']['MetaClientOptions'];
+
+// @public (undocumented)
 type MetaDetailed = components['schemas']['MetaDetailed'];
 
 // @public (undocumented)
@@ -3351,7 +3400,7 @@ type QueueStats = {
 type QueueStatsLog = QueueStats[];
 
 // @public (undocumented)
-export const queueTypes: readonly ["system", "endedPollNotification", "postScheduledNote", "deliver", "inbox", "db", "relationship", "objectStorage", "userWebhookDeliver", "systemWebhookDeliver"];
+export const queueTypes: readonly ["system", "endedPollNotification", "postScheduledNote", "deliver", "inbox", "db", "relationship", "objectStorage", "userWebhookDeliver", "systemWebhookDeliver", "videoTranscoding"];
 
 // @public (undocumented)
 type RenoteMuteCreateRequest = operations['renote-mute___create']['requestBody']['content']['application/json'];
@@ -3728,6 +3777,12 @@ type UsersGalleryPostsRequest = operations['users___gallery___posts']['requestBo
 type UsersGalleryPostsResponse = operations['users___gallery___posts']['responses']['200']['content']['application/json'];
 
 // @public (undocumented)
+type UsersGetFollowingBirthdayUsersRequest = operations['users___get-following-birthday-users']['requestBody']['content']['application/json'];
+
+// @public (undocumented)
+type UsersGetFollowingBirthdayUsersResponse = operations['users___get-following-birthday-users']['responses']['200']['content']['application/json'];
+
+// @public (undocumented)
 type UsersGetFrequentlyRepliedUsersRequest = operations['users___get-frequently-replied-users']['requestBody']['content']['application/json'];
 
 // @public (undocumented)
@@ -3863,8 +3918,8 @@ type VerifyEmailRequest = operations['verify-email']['requestBody']['content']['
 //
 // src/entities.ts:55:2 - (ae-forgotten-export) The symbol "ModerationLogPayloads" needs to be exported by the entry point index.d.ts
 // src/streaming.ts:57:3 - (ae-forgotten-export) The symbol "ReconnectingWebSocket" needs to be exported by the entry point index.d.ts
-// src/streaming.types.ts:226:4 - (ae-forgotten-export) The symbol "ReversiUpdateKey" needs to be exported by the entry point index.d.ts
-// src/streaming.types.ts:236:4 - (ae-forgotten-export) The symbol "ReversiUpdateSettings" needs to be exported by the entry point index.d.ts
+// src/streaming.types.ts:246:4 - (ae-forgotten-export) The symbol "ReversiUpdateKey" needs to be exported by the entry point index.d.ts
+// src/streaming.types.ts:261:4 - (ae-forgotten-export) The symbol "ReversiUpdateSettings" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

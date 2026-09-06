@@ -109,6 +109,10 @@ export type EndedPollNotificationJobData = {
 	noteId: MiNote['id'];
 };
 
+export type VideoTranscodingJobData = {
+	fileId: MiDriveFile['id'];
+};
+
 export type PostScheduledNoteJobData = {
 	noteDraftId: string;
 };

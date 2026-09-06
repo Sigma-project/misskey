@@ -13,7 +13,6 @@ import type {
 	Role,
 	ReversiGameDetailed,
 	SystemWebhook,
-	UserLite,
 	ChatRoom,
 } from './autogen/models.js';
 
@@ -243,6 +242,7 @@ export const queueTypes = [
 	'objectStorage',
 	'userWebhookDeliver',
 	'systemWebhookDeliver',
+	'videoTranscoding',
 ] as const;
 
 // See: packages/backend/src/core/ReversiService.ts@L410

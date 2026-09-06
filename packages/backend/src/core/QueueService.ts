@@ -6,7 +6,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { MetricsTime, type JobType } from 'bullmq';
-import { parse as parseRedisInfo } from 'redis-info';
 import type { IActivity } from '@/core/activitypub/type.js';
 import type { MiDriveFile } from '@/models/DriveFile.js';
 import type { MiWebhook, WebhookEventTypes } from '@/models/Webhook.js';
@@ -38,6 +37,7 @@ import type {
 	SystemQueue,
 	SystemWebhookDeliverQueue,
 	UserWebhookDeliverQueue,
+	VideoTranscodingQueue,
 } from './QueueModule.js';
 import type httpSignature from '@peertube/http-signature';
 import type * as Bull from 'bullmq';
@@ -53,6 +53,7 @@ export const QUEUE_TYPES = [
 	'objectStorage',
 	'userWebhookDeliver',
 	'systemWebhookDeliver',
+	'videoTranscoding',
 ] as const;
 
 const REPEATABLE_SYSTEM_JOB_DEF = [{
@@ -86,6 +87,19 @@ const REPEATABLE_SYSTEM_JOB_DEF = [{
 	pattern: '0 4 * * *',
 }];
 
+function parseRedisInfo(infoText: string): Record<string, string> {
+	const fields = infoText
+		.split('\n')
+		.filter(line => line.length > 0 && !line.startsWith('#'))
+		.map(line => line.trim().split(':'));
+
+	const result: Record<string, string> = {};
+	for (const [key, value] of fields) {
+		result[key] = value;
+	}
+	return result;
+}
+
 @Injectable()
 export class QueueService {
 	constructor(
@@ -102,6 +116,7 @@ export class QueueService {
 		@Inject('queue:objectStorage') public objectStorageQueue: ObjectStorageQueue,
 		@Inject('queue:userWebhookDeliver') public userWebhookDeliverQueue: UserWebhookDeliverQueue,
 		@Inject('queue:systemWebhookDeliver') public systemWebhookDeliverQueue: SystemWebhookDeliverQueue,
+		@Inject('queue:videoTranscoding') public videoTranscodingQueue: VideoTranscodingQueue,
 	) {
 		for (const def of REPEATABLE_SYSTEM_JOB_DEF) {
 			this.systemQueue.upsertJobScheduler(def.name, {
@@ -627,6 +642,29 @@ export class QueueService {
 	}
 
 	@bindThis
+	public createVideoTranscodingJob(fileId: MiDriveFile['id']) {
+		return this.videoTranscodingQueue.add('transcode', {
+			fileId,
+		}, {
+			// fileIdをjobIdに使うことで同一ファイルの重複ジョブを防ぐ
+			jobId: fileId,
+			attempts: 3,
+			backoff: {
+				type: 'exponential',
+				delay: 60 * 1000,
+			},
+			removeOnComplete: {
+				age: 3600 * 24 * 3, // keep up to 3 days
+				count: 100,
+			},
+			removeOnFail: {
+				age: 3600 * 24 * 7, // keep up to 7 days
+				count: 300,
+			},
+		});
+	}
+
+	@bindThis
 	public createCleanRemoteFilesJob() {
 		return this.objectStorageQueue.add('cleanRemoteFiles', {}, {
 			removeOnComplete: {
@@ -728,6 +766,7 @@ export class QueueService {
 			case 'objectStorage': return this.objectStorageQueue;
 			case 'userWebhookDeliver': return this.userWebhookDeliverQueue;
 			case 'systemWebhookDeliver': return this.systemWebhookDeliverQueue;
+			case 'videoTranscoding': return this.videoTranscodingQueue;
 			default: throw new Error(`Unrecognized queue type: ${type}`);
 		}
 	}
@@ -890,7 +929,7 @@ export class QueueService {
 			},
 			db: {
 				version: db.redis_version,
-				mode: db.redis_mode,
+				mode: db.redis_mode as 'cluster' | 'standalone' | 'sentinel',
 				runId: db.run_id,
 				processId: db.process_id,
 				port: parseInt(db.tcp_port),

@@ -905,6 +905,33 @@ export type paths = {
          */
         post: operations['admin___update-user-note'];
     };
+    '/admin/video-transcoding/cancel-job': {
+        /**
+         * admin/video-transcoding/cancel-job
+         * @description No description provided.
+         *
+         *     **Credential required**: *Yes* / **Permission**: *write:admin:queue*
+         */
+        post: operations['admin___video-transcoding___cancel-job'];
+    };
+    '/admin/video-transcoding/list-jobs': {
+        /**
+         * admin/video-transcoding/list-jobs
+         * @description No description provided.
+         *
+         *     **Credential required**: *Yes* / **Permission**: *read:admin:queue*
+         */
+        post: operations['admin___video-transcoding___list-jobs'];
+    };
+    '/admin/video-transcoding/retry-job': {
+        /**
+         * admin/video-transcoding/retry-job
+         * @description No description provided.
+         *
+         *     **Credential required**: *Yes* / **Permission**: *write:admin:queue*
+         */
+        post: operations['admin___video-transcoding___retry-job'];
+    };
     '/announcements': {
         /**
          * announcements
@@ -3717,6 +3744,15 @@ export type paths = {
          */
         post: operations['users___gallery___posts'];
     };
+    '/users/get-following-birthday-users': {
+        /**
+         * users/get-following-birthday-users
+         * @description Find users who have a birthday on the specified range.
+         *
+         *     **Credential required**: *Yes* / **Permission**: *read:account*
+         */
+        post: operations['users___get-following-birthday-users'];
+    };
     '/users/get-frequently-replied-users': {
         /**
          * users/get-frequently-replied-users
@@ -4267,6 +4303,33 @@ export type components = {
                     /** Format: misskey:id */
                     userListId: string;
                 };
+                login?: {
+                    /** @enum {string} */
+                    type: 'all' | 'following' | 'follower' | 'mutualFollow' | 'followingOrFollower' | 'never';
+                } | {
+                    /** @enum {string} */
+                    type: 'list';
+                    /** Format: misskey:id */
+                    userListId: string;
+                };
+                createToken?: {
+                    /** @enum {string} */
+                    type: 'all' | 'following' | 'follower' | 'mutualFollow' | 'followingOrFollower' | 'never';
+                } | {
+                    /** @enum {string} */
+                    type: 'list';
+                    /** Format: misskey:id */
+                    userListId: string;
+                };
+                exportCompleted?: {
+                    /** @enum {string} */
+                    type: 'all' | 'following' | 'follower' | 'mutualFollow' | 'followingOrFollower' | 'never';
+                } | {
+                    /** @enum {string} */
+                    type: 'list';
+                    /** Format: misskey:id */
+                    userListId: string;
+                };
             };
             emailNotificationTypes: string[];
             achievements: components['schemas']['Achievement'][];
@@ -4762,9 +4825,20 @@ export type components = {
                 orientation?: number;
                 /** @example rgb(40,65,87) */
                 avgColor?: string;
+                /** @example 30.5 */
+                duration?: number;
+                /** @example av1 */
+                videoCodec?: string;
+                /** @example opus */
+                audioCodec?: string;
             };
             /** Format: url */
             url: string;
+            /** Format: url */
+            hlsManifestUrl: string | null;
+            /** Format: url */
+            dashManifestUrl: string | null;
+            transcodingStatus: string | null;
             /** Format: url */
             thumbnailUrl: string | null;
             comment: string | null;
@@ -5337,7 +5411,8 @@ export type components = {
             /** Format: id */
             timeoutUserId: string | null;
             black: number | null;
-            bw: string;
+            /** @enum {string} */
+            bw: 'random' | '1' | '2';
             noIrregularRules: boolean;
             isLlotheo: boolean;
             canPutEverywhere: boolean;
@@ -5373,7 +5448,8 @@ export type components = {
             /** Format: id */
             timeoutUserId: string | null;
             black: number | null;
-            bw: string;
+            /** @enum {string} */
+            bw: 'random' | '1' | '2';
             noIrregularRules: boolean;
             isLlotheo: boolean;
             canPutEverywhere: boolean;
@@ -5403,7 +5479,7 @@ export type components = {
             feedbackUrl: string | null;
             defaultDarkTheme: string | null;
             defaultLightTheme: string | null;
-            clientOptions: Record<string, never>;
+            clientOptions: components['schemas']['MetaClientOptions'];
             disableRegistration: boolean;
             emailRequiredForSignup: boolean;
             enableHcaptcha: boolean;
@@ -5502,6 +5578,12 @@ export type components = {
             cacheRemoteSensitiveFiles: boolean;
         };
         MetaDetailed: components['schemas']['MetaLite'] & components['schemas']['MetaDetailedOnly'];
+        MetaClientOptions: {
+            /** @enum {string} */
+            entrancePageStyle: 'classic' | 'simple';
+            showTimelineForVisitor: boolean;
+            showActivitiesForVisitor: boolean;
+        };
         UserWebhook: {
             /** Format: id */
             id: string;
@@ -6777,8 +6859,10 @@ export interface operations {
                         updatedAt: string | null;
                         text: string;
                         title: string;
-                        icon: string | null;
-                        display: string;
+                        /** @enum {string} */
+                        icon: 'info' | 'warning' | 'error' | 'success';
+                        /** @enum {string} */
+                        display: 'normal' | 'banner' | 'dialog';
                         isActive: boolean;
                         forExistingUsers: boolean;
                         silence: boolean;
@@ -8217,16 +8301,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': {
-                        /** Format: id */
-                        id: string;
-                        aliases: string[];
-                        name: string;
-                        category: string | null;
-                        /** @description The local host is represented with `null`. The field exists for compatibility with other API endpoints that return files. */
-                        host: string | null;
-                        url: string;
-                    }[];
+                    'application/json': components['schemas']['EmojiDetailed'][];
                 };
             };
             /** @description Client error */
@@ -8305,16 +8380,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': {
-                        /** Format: id */
-                        id: string;
-                        aliases: string[];
-                        name: string;
-                        category: string | null;
-                        /** @description The local host is represented with `null`. */
-                        host: string | null;
-                        url: string;
-                    }[];
+                    'application/json': components['schemas']['EmojiDetailed'][];
                 };
             };
             /** @description Client error */
@@ -9446,7 +9512,7 @@ export interface operations {
                         deeplIsPro: boolean;
                         defaultDarkTheme: string | null;
                         defaultLightTheme: string | null;
-                        clientOptions: Record<string, never>;
+                        clientOptions: components['schemas']['MetaClientOptions'];
                         description: string | null;
                         disableRegistration: boolean;
                         impressumUrl: string | null;
@@ -9473,6 +9539,9 @@ export interface operations {
                         urlPreviewTimeout: number;
                         urlPreviewMaximumContentLength: number;
                         urlPreviewRequireContentLength: boolean;
+                        enableVideoTranscoding: boolean;
+                        videoTranscodeMaxFileSize: number;
+                        videoTranscodeMaxDuration: number;
                         urlPreviewUserAgent: string | null;
                         urlPreviewSummaryProxyUrl: string | null;
                         /** @enum {string} */
@@ -9611,7 +9680,7 @@ export interface operations {
             content: {
                 'application/json': {
                     /** @enum {string} */
-                    queue: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver';
+                    queue: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver' | 'videoTranscoding';
                     /** @enum {string} */
                     state: '*' | 'completed' | 'wait' | 'active' | 'paused' | 'prioritized' | 'delayed' | 'failed';
                 };
@@ -9798,7 +9867,7 @@ export interface operations {
             content: {
                 'application/json': {
                     /** @enum {string} */
-                    queue: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver';
+                    queue: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver' | 'videoTranscoding';
                     state: ('active' | 'wait' | 'delayed' | 'completed' | 'failed' | 'paused')[];
                     search?: string;
                 };
@@ -9866,7 +9935,7 @@ export interface operations {
             content: {
                 'application/json': {
                     /** @enum {string} */
-                    queue: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver';
+                    queue: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver' | 'videoTranscoding';
                 };
             };
         };
@@ -9929,7 +9998,7 @@ export interface operations {
             content: {
                 'application/json': {
                     /** @enum {string} */
-                    queue: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver';
+                    queue: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver' | 'videoTranscoding';
                 };
             };
         };
@@ -9942,7 +10011,7 @@ export interface operations {
                 content: {
                     'application/json': {
                         /** @enum {string} */
-                        name: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver';
+                        name: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver' | 'videoTranscoding';
                         qualifiedName: string;
                         counts: {
                             [key: string]: number;
@@ -10032,7 +10101,7 @@ export interface operations {
                 content: {
                     'application/json': {
                         /** @enum {string} */
-                        name: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver';
+                        name: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver' | 'videoTranscoding';
                         counts: {
                             [key: string]: number;
                         };
@@ -10096,7 +10165,7 @@ export interface operations {
             content: {
                 'application/json': {
                     /** @enum {string} */
-                    queue: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver';
+                    queue: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver' | 'videoTranscoding';
                     jobId: string;
                 };
             };
@@ -10160,7 +10229,7 @@ export interface operations {
             content: {
                 'application/json': {
                     /** @enum {string} */
-                    queue: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver';
+                    queue: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver' | 'videoTranscoding';
                     jobId: string;
                 };
             };
@@ -10224,7 +10293,7 @@ export interface operations {
             content: {
                 'application/json': {
                     /** @enum {string} */
-                    queue: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver';
+                    queue: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver' | 'videoTranscoding';
                     jobId: string;
                 };
             };
@@ -10291,7 +10360,7 @@ export interface operations {
             content: {
                 'application/json': {
                     /** @enum {string} */
-                    queue: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver';
+                    queue: 'system' | 'endedPollNotification' | 'postScheduledNote' | 'deliver' | 'inbox' | 'db' | 'relationship' | 'objectStorage' | 'userWebhookDeliver' | 'systemWebhookDeliver' | 'videoTranscoding';
                     jobId: string;
                 };
             };
@@ -12702,7 +12771,12 @@ export interface operations {
                     description?: string | null;
                     defaultLightTheme?: string | null;
                     defaultDarkTheme?: string | null;
-                    clientOptions?: Record<string, never>;
+                    clientOptions?: {
+                        /** @enum {string} */
+                        entrancePageStyle?: 'classic' | 'simple';
+                        showTimelineForVisitor?: boolean;
+                        showActivitiesForVisitor?: boolean;
+                    };
                     cacheRemoteFiles?: boolean;
                     cacheRemoteSensitiveFiles?: boolean;
                     emailRequiredForSignup?: boolean;
@@ -12794,6 +12868,9 @@ export interface operations {
                     urlPreviewTimeout?: number;
                     urlPreviewMaximumContentLength?: number;
                     urlPreviewRequireContentLength?: boolean;
+                    enableVideoTranscoding?: boolean;
+                    videoTranscodeMaxFileSize?: number;
+                    videoTranscodeMaxDuration?: number;
                     urlPreviewUserAgent?: string | null;
                     urlPreviewSummaryProxyUrl?: string | null;
                     /** @enum {string} */
@@ -12942,6 +13019,212 @@ export interface operations {
                     /** Format: misskey:id */
                     userId: string;
                     text: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK (without any results) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+            };
+            /** @description Client error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Authentication error */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Forbidden error */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description I'm Ai */
+            418: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+        };
+    };
+    'admin___video-transcoding___cancel-job': {
+        requestBody: {
+            content: {
+                'application/json': {
+                    /** Format: misskey:id */
+                    fileId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK (without any results) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+            };
+            /** @description Client error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Authentication error */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Forbidden error */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description I'm Ai */
+            418: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+        };
+    };
+    'admin___video-transcoding___list-jobs': {
+        requestBody: {
+            content: {
+                'application/json': {
+                    /** @default 30 */
+                    limit?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description OK (with results) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': {
+                        capabilities: {
+                            av1: boolean;
+                            vvc: boolean;
+                            opus: boolean;
+                            hls: boolean;
+                            dash: boolean;
+                        };
+                        active: Record<string, never>[];
+                        failed: {
+                            fileId: string;
+                            fileName: string;
+                            userId: string | null;
+                        }[];
+                    };
+                };
+            };
+            /** @description Client error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Authentication error */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Forbidden error */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description I'm Ai */
+            418: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+        };
+    };
+    'admin___video-transcoding___retry-job': {
+        requestBody: {
+            content: {
+                'application/json': {
+                    /** Format: misskey:id */
+                    fileId: string;
                 };
             };
         };
@@ -23987,6 +24270,8 @@ export interface operations {
                     tag: string;
                     /** @default 10 */
                     limit?: number;
+                    /** @default 0 */
+                    offset?: number;
                     /** @enum {string} */
                     sort: '+follower' | '-follower' | '+createdAt' | '-createdAt' | '+updatedAt' | '-updatedAt';
                     /**
@@ -34847,6 +35132,7 @@ export interface operations {
                     untilDate?: number;
                     /** @default 10 */
                     limit?: number;
+                    /** @description @deprecated use get-following-birthday-users instead. */
                     birthday?: string | null;
                 };
             };
@@ -34933,6 +35219,92 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['GalleryPost'][];
+                };
+            };
+            /** @description Client error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Authentication error */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Forbidden error */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description I'm Ai */
+            418: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+        };
+    };
+    'users___get-following-birthday-users': {
+        requestBody: {
+            content: {
+                'application/json': {
+                    /** @default 10 */
+                    limit?: number;
+                    /** @default 0 */
+                    offset?: number;
+                    birthday: {
+                        month: number;
+                        day: number;
+                    } | {
+                        begin: {
+                            month: number;
+                            day: number;
+                        };
+                        end: {
+                            month: number;
+                            day: number;
+                        };
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description OK (with results) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': {
+                        /** Format: misskey:id */
+                        id: string;
+                        birthday: string;
+                        user: components['schemas']['UserLite'];
+                    }[];
                 };
             };
             /** @description Client error */

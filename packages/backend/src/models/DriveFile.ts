@@ -22,7 +22,7 @@ export class MiDriveFile {
 	})
 	public userId: MiUser['id'] | null;
 
-	@ManyToOne(type => MiUser, {
+	@ManyToOne(() => MiUser, {
 		onDelete: 'SET NULL',
 	})
 	@JoinColumn()
@@ -76,7 +76,7 @@ export class MiDriveFile {
 		default: {},
 		comment: 'The any properties of the DriveFile. For example, it includes image width/height.',
 	})
-	public properties: { width?: number; height?: number; orientation?: number; avgColor?: string };
+	public properties: { width?: number; height?: number; orientation?: number; avgColor?: string; duration?: number; videoCodec?: string; audioCodec?: string };
 
 	@Column('boolean')
 	public storedInternal: boolean;
@@ -142,7 +142,7 @@ export class MiDriveFile {
 	})
 	public folderId: MiDriveFolder['id'] | null;
 
-	@ManyToOne(type => MiDriveFolder, {
+	@ManyToOne(() => MiDriveFolder, {
 		onDelete: 'SET NULL',
 	})
 	@JoinColumn()
@@ -188,4 +188,52 @@ export class MiDriveFile {
 		length: 128, nullable: true,
 	})
 	public requestIp: string | null;
+
+	@Column('varchar', {
+		length: 512, nullable: true,
+		comment: 'The URL of the HLS master manifest for the transcoded video.',
+	})
+	public hlsManifestUrl: string | null;
+
+	@Column('varchar', {
+		length: 512, nullable: true,
+		comment: 'The URL of the DASH manifest for the transcoded video.',
+	})
+	public dashManifestUrl: string | null;
+
+	@Column('varchar', {
+		length: 16, nullable: true,
+		comment: 'The transcoding status: pending/processing/completed/failed/skipped.',
+	})
+	public transcodingStatus: string | null;
+
+	@Column('varchar', {
+		length: 256, nullable: true,
+		comment: 'The storage prefix (directory) holding the transcoded stream artifacts.',
+	})
+	public transcodingPrefix: string | null;
+
+	@Column('boolean', {
+		nullable: true,
+		comment: 'Whether the transcoded artifacts are stored on the internal storage (independent of the original file).',
+	})
+	public transcodingStoredInternal: boolean | null;
+
+	@Column('jsonb', {
+		default: [],
+		comment: 'The descriptors of the transcoded variants.',
+	})
+	public transcodingVariants: {
+		codec: 'av1' | 'vvc';
+		container: 'cmaf';
+		manifestType: 'hls' | 'dash' | 'both';
+		playlistPath: string;
+		initPath: string;
+		width: number;
+		height: number;
+		bitrate: number;
+		durationSec: number;
+		byteSize: number;
+		codecString: string;
+	}[];
 }

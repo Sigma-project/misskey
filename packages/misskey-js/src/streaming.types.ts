@@ -206,6 +206,26 @@ export type Channels = {
 		};
 		receives: null;
 	};
+	videoTranscoding: {
+		params: null;
+		events: {
+			progress: (payload: {
+				fileId: string;
+				userId: string | null;
+				fileName: string;
+				phase: 'queued' | 'downloading' | 'probing' | 'encoding-av1' | 'encoding-vvc' | 'uploading' | 'done' | 'skipped' | 'failed';
+				percent: number;
+				overallPercent: number;
+				codec?: 'av1' | 'vvc';
+				fps?: number;
+				speed?: string;
+				message?: string;
+				startedAt: number;
+				updatedAt: number;
+			}) => void;
+		};
+		receives: null;
+	};
 	reversi: {
 		params: null;
 		events: {
@@ -224,7 +244,12 @@ export type Channels = {
 			canceled: (payload: { userId: User['id']; }) => void;
 			changeReadyStates: (payload: { user1: boolean; user2: boolean; }) => void;
 			updateSettings: <K extends ReversiUpdateKey>(payload: { userId: User['id']; key: K; value: ReversiGameDetailed[K]; }) => void;
-			log: (payload: Record<string, unknown>) => void;
+			log: (payload: {
+				time: number;
+				player: boolean;
+				operation: 'put';
+				pos: number;
+			} & { id: string | null }) => void;
 		};
 		receives: {
 			putStone: {
@@ -291,7 +316,10 @@ export type NoteUpdatedEvent = { id: Note['id'] } & ({
 	type: 'reacted';
 	body: {
 		reaction: string;
-		emoji: string | null;
+		emoji?: {
+			name: string;
+			url: string;
+		} | null;
 		userId: User['id'];
 	};
 } | {

@@ -35,6 +35,12 @@ export type FileInfo = {
 	height?: number;
 	orientation?: number;
 	blurhash?: string;
+	/** 動画の長さ（秒）。動画ファイルのみ */
+	duration?: number;
+	/** 動画ストリームのコーデック名（例: av1, h264）。動画ファイルのみ */
+	videoCodec?: string;
+	/** 音声ストリームのコーデック名（例: opus, aac）。動画ファイルのみ */
+	audioCodec?: string;
 	sensitive: boolean;
 	porn: boolean;
 	warnings: string[];
@@ -182,6 +188,18 @@ export class FileInfoService {
 			});
 		}
 
+		// video duration / codecs
+		let duration: number | undefined;
+		let videoCodec: string | undefined;
+		let audioCodec: string | undefined;
+
+		if (type.mime.startsWith('video/')) {
+			const videoInfo = await this.getVideoInfo(path);
+			duration = videoInfo.duration;
+			videoCodec = videoInfo.videoCodec;
+			audioCodec = videoInfo.audioCodec;
+		}
+
 		let sensitive = false;
 		let porn = false;
 
@@ -207,6 +225,7 @@ export class FileInfoService {
 			height,
 			orientation,
 			blurhash,
+			...(type.mime.startsWith('video/') ? { duration, videoCodec, audioCodec } : {}),
 			sensitive,
 			porn,
 			warnings,
@@ -399,18 +418,80 @@ export class FileInfoService {
 		const sublogger = this.logger.createSubLogger('ffprobe');
 		sublogger.info(`Checking the video file. File path: ${path}`);
 		return new Promise((resolve) => {
+			let settled = false;
+			const done = (value: boolean) => {
+				if (settled) return;
+				settled = true;
+				resolve(value);
+			};
+
+			// ffprobe ハング対策の wall-clock タイムアウト（壊れた入力でアップロードを止めない）
+			const timer = setTimeout(() => {
+				sublogger.warn(`ffprobe timed out. Returns true. File path: ${path}`);
+				done(true);
+			}, 30 * 1000);
+
 			try {
 				FFmpeg.ffprobe(path, (err, metadata) => {
+					clearTimeout(timer);
 					if (err) {
 						sublogger.warn(`Could not check the video file. Returns true. File path: ${path}`, err);
-						resolve(true);
+						done(true);
 						return;
 					}
-					resolve(metadata.streams.some((stream) => stream.codec_type === 'video'));
+					done(metadata.streams.some((stream) => stream.codec_type === 'video'));
 				});
 			} catch (err) {
+				clearTimeout(timer);
 				sublogger.warn(`Could not check the video file. Returns true. File path: ${path}`, err as Error);
-				resolve(true);
+				done(true);
+			}
+		});
+	}
+
+	/**
+	 * 動画ファイルの長さ・コーデックを取得する
+	 * （エラー時は空オブジェクトを返し、呼び出し側の処理を止めない）
+	 *
+	 * @param path ファイルパス
+	 */
+	@bindThis
+	private getVideoInfo(path: string): Promise<{ duration?: number; videoCodec?: string; audioCodec?: string }> {
+		const sublogger = this.logger.createSubLogger('ffprobe');
+		return new Promise((resolve) => {
+			let settled = false;
+			const done = (value: { duration?: number; videoCodec?: string; audioCodec?: string }) => {
+				if (settled) return;
+				settled = true;
+				resolve(value);
+			};
+
+			// ffprobe ハング対策の wall-clock タイムアウト
+			const timer = setTimeout(() => {
+				sublogger.warn(`ffprobe timed out. File path: ${path}`);
+				done({});
+			}, 30 * 1000);
+
+			try {
+				FFmpeg.ffprobe(path, (err, metadata) => {
+					clearTimeout(timer);
+					if (err) {
+						sublogger.warn(`Could not probe the video file. File path: ${path}`, err);
+						done({});
+						return;
+					}
+					const videoStream = metadata.streams.find((s) => s.codec_type === 'video');
+					const audioStream = metadata.streams.find((s) => s.codec_type === 'audio');
+					done({
+						duration: typeof metadata.format.duration === 'number' ? metadata.format.duration : undefined,
+						videoCodec: videoStream?.codec_name,
+						audioCodec: audioStream?.codec_name,
+					});
+				});
+			} catch (err) {
+				clearTimeout(timer);
+				sublogger.warn(`Could not probe the video file. File path: ${path}`, err as Error);
+				done({});
 			}
 		});
 	}
@@ -520,25 +601,13 @@ export class FileInfoService {
 	 * Calculate blurhash string of image
 	 */
 	@bindThis
-	private getBlurhash(path: string, type: string): Promise<string> {
-		return new Promise(async (resolve, reject) => {
-			(await sharpBmp(path, type))
-				.raw()
-				.ensureAlpha()
-				.resize(64, 64, { fit: 'inside' })
-				.toBuffer((err, buffer, info) => {
-					if (err) return reject(err);
-
-					let hash;
-
-					try {
-						hash = blurhash.encode(new Uint8ClampedArray(buffer), info.width, info.height, 5, 5);
-					} catch (e) {
-						return reject(e);
-					}
-
-					resolve(hash);
-				});
-		});
+	private async getBlurhash(path: string, type: string): Promise<string> {
+		const sharp = await sharpBmp(path, type);
+		const { data: buffer, info } = await sharp
+			.raw()
+			.ensureAlpha()
+			.resize(64, 64, { fit: 'inside' })
+			.toBuffer({ resolveWithObject: true });
+		return blurhash.encode(new Uint8ClampedArray(buffer), info.width, info.height, 5, 5);
 	}
 }

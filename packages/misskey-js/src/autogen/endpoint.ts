@@ -137,6 +137,10 @@ import type {
 	AdminUpdateProxyAccountRequest,
 	AdminUpdateProxyAccountResponse,
 	AdminUpdateUserNoteRequest,
+	AdminVideoTranscodingCancelJobRequest,
+	AdminVideoTranscodingListJobsRequest,
+	AdminVideoTranscodingListJobsResponse,
+	AdminVideoTranscodingRetryJobRequest,
 	AnnouncementsRequest,
 	AnnouncementsResponse,
 	AnnouncementsShowRequest,
@@ -616,6 +620,8 @@ import type {
 	UsersFollowingResponse,
 	UsersGalleryPostsRequest,
 	UsersGalleryPostsResponse,
+	UsersGetFollowingBirthdayUsersRequest,
+	UsersGetFollowingBirthdayUsersResponse,
 	UsersGetFrequentlyRepliedUsersRequest,
 	UsersGetFrequentlyRepliedUsersResponse,
 	UsersListsCreateRequest,
@@ -759,6 +765,9 @@ export type Endpoints = {
 	'admin/update-meta': { req: AdminUpdateMetaRequest; res: EmptyResponse };
 	'admin/update-proxy-account': { req: AdminUpdateProxyAccountRequest; res: AdminUpdateProxyAccountResponse };
 	'admin/update-user-note': { req: AdminUpdateUserNoteRequest; res: EmptyResponse };
+	'admin/video-transcoding/cancel-job': { req: AdminVideoTranscodingCancelJobRequest; res: EmptyResponse };
+	'admin/video-transcoding/list-jobs': { req: AdminVideoTranscodingListJobsRequest; res: AdminVideoTranscodingListJobsResponse };
+	'admin/video-transcoding/retry-job': { req: AdminVideoTranscodingRetryJobRequest; res: EmptyResponse };
 	'announcements': { req: AnnouncementsRequest; res: AnnouncementsResponse };
 	'announcements/show': { req: AnnouncementsShowRequest; res: AnnouncementsShowResponse };
 	'antennas/create': { req: AntennasCreateRequest; res: AntennasCreateResponse };
@@ -1067,6 +1076,7 @@ export type Endpoints = {
 	'users/followers': { req: UsersFollowersRequest; res: UsersFollowersResponse };
 	'users/following': { req: UsersFollowingRequest; res: UsersFollowingResponse };
 	'users/gallery/posts': { req: UsersGalleryPostsRequest; res: UsersGalleryPostsResponse };
+	'users/get-following-birthday-users': { req: UsersGetFollowingBirthdayUsersRequest; res: UsersGetFollowingBirthdayUsersResponse };
 	'users/get-frequently-replied-users': { req: UsersGetFrequentlyRepliedUsersRequest; res: UsersGetFrequentlyRepliedUsersResponse };
 	'users/lists/create': { req: UsersListsCreateRequest; res: UsersListsCreateResponse };
 	'users/lists/create-from-public': { req: UsersListsCreateFromPublicRequest; res: UsersListsCreateFromPublicResponse };

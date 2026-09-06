@@ -29,8 +29,19 @@ describe('Move', () => {
 			// Move @alice@a.test ==> @bob@b.test
 			await bob.client.request('i/update', { alsoKnownAs: [`@${alice.username}@a.test`] });
 			await alice.client.request('i/move', { moveToAccount: `@${bob.username}@b.test` });
-			await sleep();
-		});
+			// Moving schedules relationship/delivery jobs; the HTTP response does not await federation.
+			const deadline = Date.now() + 10_000;
+			while (true) {
+				const [following, followers] = await Promise.all([
+					carol.client.request('users/following', { userId: carol.id }),
+					bob.client.request('users/followers', { userId: bob.id }),
+				]);
+				if (following.some(({ followee }) => followee?.url === `https://b.test/@${bob.username}`)
+					&& followers.some(({ follower }) => follower?.url === `https://a.test/@${carol.username}`)) break;
+				assert(Date.now() < deadline, `Move did not federate within 10 seconds (following=${following.length}, followers=${followers.length})`);
+				await sleep(100);
+			}
+		}, 20_000);
 
 		test('Check from follower', async () => {
 			const following = await carol.client.request('users/following', { userId: carol.id });

@@ -428,8 +428,7 @@ export const meta = {
 				optional: false, nullable: true,
 			},
 			clientOptions: {
-				type: 'object',
-				optional: false, nullable: false,
+				ref: 'MetaClientOptions',
 			},
 			description: {
 				type: 'string',
@@ -519,6 +518,18 @@ export const meta = {
 			},
 			urlPreviewRequireContentLength: {
 				type: 'boolean',
+				optional: false, nullable: false,
+			},
+			enableVideoTranscoding: {
+				type: 'boolean',
+				optional: false, nullable: false,
+			},
+			videoTranscodeMaxFileSize: {
+				type: 'number',
+				optional: false, nullable: false,
+			},
+			videoTranscodeMaxDuration: {
+				type: 'number',
 				optional: false, nullable: false,
 			},
 			urlPreviewUserAgent: {
@@ -739,6 +750,9 @@ export default class extends Endpoint<typeof meta, typeof paramDef> { // eslint-
 				urlPreviewTimeout: instance.urlPreviewTimeout,
 				urlPreviewMaximumContentLength: instance.urlPreviewMaximumContentLength,
 				urlPreviewRequireContentLength: instance.urlPreviewRequireContentLength,
+				enableVideoTranscoding: instance.enableVideoTranscoding,
+				videoTranscodeMaxFileSize: Number(instance.videoTranscodeMaxFileSize),
+				videoTranscodeMaxDuration: instance.videoTranscodeMaxDuration,
 				urlPreviewUserAgent: instance.urlPreviewUserAgent,
 				urlPreviewSummaryProxyUrl: instance.urlPreviewSummaryProxyUrl,
 				federation: instance.federation,

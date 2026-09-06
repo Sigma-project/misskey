@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
+import { DI } from '@/di-symbols.js';
 import type { MiMeta } from '@/models/Meta.js';
 import { ModerationLogService } from '@/core/ModerationLogService.js';
 import { Endpoint } from '@/server/api/endpoint-base.js';
@@ -67,7 +68,14 @@ export const paramDef = {
 		description: { type: 'string', nullable: true },
 		defaultLightTheme: { type: 'string', nullable: true },
 		defaultDarkTheme: { type: 'string', nullable: true },
-		clientOptions: { type: 'object', nullable: false },
+		clientOptions: {
+			type: 'object', nullable: false,
+			properties: {
+				entrancePageStyle: { type: 'string', nullable: false, enum: ['classic', 'simple'] },
+				showTimelineForVisitor: { type: 'boolean', nullable: false },
+				showActivitiesForVisitor: { type: 'boolean', nullable: false },
+			},
+		},
 		cacheRemoteFiles: { type: 'boolean' },
 		cacheRemoteSensitiveFiles: { type: 'boolean' },
 		emailRequiredForSignup: { type: 'boolean' },
@@ -175,6 +183,9 @@ export const paramDef = {
 		urlPreviewTimeout: { type: 'integer' },
 		urlPreviewMaximumContentLength: { type: 'integer' },
 		urlPreviewRequireContentLength: { type: 'boolean' },
+		enableVideoTranscoding: { type: 'boolean' },
+		videoTranscodeMaxFileSize: { type: 'integer' },
+		videoTranscodeMaxDuration: { type: 'integer' },
 		urlPreviewUserAgent: { type: 'string', nullable: true },
 		urlPreviewSummaryProxyUrl: { type: 'string', nullable: true },
 		federation: {
@@ -217,6 +228,9 @@ export const paramDef = {
 @Injectable()
 export default class extends Endpoint<typeof meta, typeof paramDef> { // eslint-disable-line import/no-default-export
 	constructor(
+		@Inject(DI.meta)
+		private serverSettings: MiMeta,
+
 		private metaService: MetaService,
 		private moderationLogService: ModerationLogService,
 	) {
@@ -329,7 +343,10 @@ export default class extends Endpoint<typeof meta, typeof paramDef> { // eslint-
 			}
 
 			if (ps.clientOptions !== undefined) {
-				set.clientOptions = ps.clientOptions;
+				set.clientOptions = {
+					...serverSettings.clientOptions,
+					...ps.clientOptions,
+				};
 			}
 
 			if (ps.cacheRemoteFiles !== undefined) {
@@ -684,6 +701,18 @@ export default class extends Endpoint<typeof meta, typeof paramDef> { // eslint-
 
 			if (ps.urlPreviewMaximumContentLength !== undefined) {
 				set.urlPreviewMaximumContentLength = ps.urlPreviewMaximumContentLength;
+			}
+
+			if (ps.enableVideoTranscoding !== undefined) {
+				set.enableVideoTranscoding = ps.enableVideoTranscoding;
+			}
+
+			if (ps.videoTranscodeMaxFileSize !== undefined) {
+				set.videoTranscodeMaxFileSize = ps.videoTranscodeMaxFileSize;
+			}
+
+			if (ps.videoTranscodeMaxDuration !== undefined) {
+				set.videoTranscodeMaxDuration = ps.videoTranscodeMaxDuration;
 			}
 
 			if (ps.urlPreviewRequireContentLength !== undefined) {
