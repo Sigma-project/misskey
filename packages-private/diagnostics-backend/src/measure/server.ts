@@ -90,9 +90,10 @@ export function waitForMessage<T>(serverProcess: ChildProcess, predicate: (messa
  * execArgv は親から引き継がず `--expose-gc` のみを渡す: 親は tsx 経由で動くため、
  * 引き継ぐと計測対象プロセスにTSローダーが載ってしまいメモリ量が歪む。
  */
-export function forkBackendServer(backendDir: string) {
+export function forkBackendServer(backendDir: string, nodePath = process.execPath) {
 	return fork(join(backendDir, 'built/entry.js'), [], {
 		cwd: backendDir,
+		execPath: nodePath,
 		env: {
 			...process.env,
 			NODE_ENV: 'production',
