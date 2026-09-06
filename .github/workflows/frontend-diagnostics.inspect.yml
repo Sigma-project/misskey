@@ -116,7 +116,12 @@ jobs:
         env:
           FRONTEND_BUNDLE_VISUALIZER: 'true'
           FRONTEND_BUNDLE_VISUALIZER_FILE: ${{ runner.temp }}/frontend-diagnostics/base-bundle-stats.json
-        run: pnpm build
+        run: |
+          pnpm build
+          # Older bases predate module-level visualizer instrumentation.
+          if ! grep -q 'FRONTEND_BUNDLE_VISUALIZER' packages/frontend/vite.config.ts; then
+            printf 'null\n' > "$FRONTEND_BUNDLE_VISUALIZER_FILE"
+          fi
 
       - name: Setup pnpm for head
         uses: pnpm/action-setup@v6.0.9
