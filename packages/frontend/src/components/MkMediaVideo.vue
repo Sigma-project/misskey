@@ -470,6 +470,8 @@ async function setupVideoSource(el: HTMLVideoElement) {
 
 function teardownHls() {
 	hlsDisposed = true;
+	cleanupNativeHls?.();
+	cleanupNativeHls = null;
 	if (hls) {
 		hls.destroy();
 		hls = null;
