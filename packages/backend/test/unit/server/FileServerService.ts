@@ -720,7 +720,7 @@ describe('FileServerService', () => {
 			expect(res.headers['content-disposition'] ?? '').toContain('dummy.png.jxl');
 		});
 
-		test('GET /proxy/:url* svg を webp に変換する', async () => {
+		test('GET /proxy/:url* svg を JXL に変換する', async () => {
 			const res = await fastify.inject({
 				method: 'GET',
 				url: `/proxy/any?url=${encodeURIComponent(remoteSvgUrl)}`,
@@ -730,9 +730,9 @@ describe('FileServerService', () => {
 			});
 
 			expect(res.statusCode).toBe(200);
-			expect(res.headers['content-type']).toBe('image/webp');
+			expect(res.headers['content-type']).toBe('image/jxl');
 			expect(res.headers['cache-control']).toBe('max-age=31536000, immutable');
-			expect(res.headers['content-disposition'] ?? '').toContain('dummy.svg.webp');
+			expect(res.headers['content-disposition'] ?? '').toContain('dummy.svg.jxl');
 		});
 
 		test('GET /proxy/:url* badge で低エントロピー画像は 404 を返す', async () => {
