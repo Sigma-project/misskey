@@ -554,7 +554,7 @@ describe('FileServerService', () => {
 			expect(res.headers.location).toContain('static=1');
 		});
 
-		test('GET /files/:key webpublic svg は mediaProxy/svg.webp にリダイレクトする', async () => {
+		test('GET /files/:key webpublic svg は mediaProxy/svg.jxl にリダイレクトする', async () => {
 			const accessKey = randomString();
 			const webpublicKey = randomString();
 			await insertDriveFile({
@@ -574,7 +574,7 @@ describe('FileServerService', () => {
 
 			expect(res.statusCode).toBe(301);
 			expect(res.headers['cache-control']).toBe('max-age=31536000, immutable');
-			expect(res.headers.location).toContain(`${config.mediaProxy}/svg.webp`);
+			expect(res.headers.location).toContain(`${config.mediaProxy}/svg.jxl`);
 		});
 	});
 
