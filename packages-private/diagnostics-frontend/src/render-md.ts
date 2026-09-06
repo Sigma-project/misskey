@@ -47,7 +47,7 @@ await writeFile(
 		bundle: {
 			base: baseBundle,
 			head: headBundle,
-			baseStats: JSON.parse(baseBundleStatsJson) as VisualizerReport,
+			baseStats: JSON.parse(baseBundleStatsJson) as VisualizerReport | null,
 			headStats: JSON.parse(headBundleStatsJson) as VisualizerReport,
 			visualizerArtifactUrl: readRequiredEnv('FRONTEND_BUNDLE_REPORT_ARTIFACT_URL'),
 		},
