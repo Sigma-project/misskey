@@ -307,3 +307,29 @@ test('throws for a metric with fewer than two samples on one side', async () => 
 	await expect(renderReport(null, { base, head }))
 		.rejects.toThrow('At least two samples per side are required');
 });
+
+test('keeps available comparisons and marks legacy measurements unavailable', async () => {
+	const base = await loadBrowserReport('base');
+	for (const sample of base.samples) sample.performance.tabMemory.totalBytes = null;
+	const markdown = renderFrontendDiagnosticsMarkdown({
+		bundle: {
+			base: await collectBundleReport(repoDirs.base),
+			head: await collectBundleReport(repoDirs.head),
+			baseStats: null,
+			headStats: await loadBundleStats('head'),
+			visualizerArtifactUrl: 'https://example.invalid/treemap',
+		},
+		browser: {
+			base,
+			head: await loadBrowserReport('head'),
+			baseHeapSnapshotUrl: 'https://example.invalid/base',
+			headHeapSnapshotUrl: 'https://example.invalid/head',
+		},
+	});
+	expect(markdown).toContain('Module-level bundle comparison unavailable');
+	expect(markdown).toContain('Page-attributed memory comparison unavailable');
+	expect(markdown).not.toContain('| **Page-attributed memory** |');
+	expect(markdown).toContain('https://example.invalid/treemap');
+	expect(markdown).toContain('V8 heap snapshot statistics');
+	expect(markdown).toContain('assets/vue-b2.js');
+});
