@@ -23,7 +23,9 @@ export function startServer(label: string, repoDir: string) {
 	process.stderr.write(`[${label}] Starting Misskey test server\n`);
 	const child = spawn(commandName('pnpm'), ['start:test'], {
 		cwd: repoDir,
-		env: process.env,
+		env: label === 'base' && process.env.FRONTEND_DIAGNOSTICS_BASE_PATH
+			? { ...process.env, PATH: process.env.FRONTEND_DIAGNOSTICS_BASE_PATH }
+			: process.env,
 		stdio: ['ignore', 'pipe', 'pipe'],
 		detached: process.platform !== 'win32',
 	});
