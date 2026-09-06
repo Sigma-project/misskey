@@ -39,6 +39,7 @@ import type { ChannelRequest } from './channel.js';
 import type { ChannelConstructor } from './channel.js';
 import type Channel from './channel.js';
 import type { EventEmitter } from 'events';
+import { VideoTranscodingChannel } from '@/server/api/stream/channels/video-transcoding.js';
 
 const MAX_CHANNELS_PER_CONNECTION = 32;
 
@@ -338,6 +339,7 @@ export default class Connection {
 			case 'chatRoom': return ChatRoomChannel;
 			case 'reversi': return ReversiChannel;
 			case 'reversiGame': return ReversiGameChannel;
+			case 'videoTranscoding': return VideoTranscodingChannel;
 
 			default:
 				throw new Error(`no such channel: ${name}`);

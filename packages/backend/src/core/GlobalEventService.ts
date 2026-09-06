@@ -158,6 +158,23 @@ export interface AdminEventTypes {
 	};
 }
 
+export interface VideoTranscodingEventTypes {
+	progress: {
+		fileId: string;
+		userId: string | null;
+		fileName: string;
+		phase: 'queued' | 'downloading' | 'probing' | 'encoding-av1' | 'encoding-vvc' | 'uploading' | 'done' | 'skipped' | 'failed';
+		percent: number;
+		overallPercent: number;
+		codec?: 'av1' | 'vvc';
+		fps?: number;
+		speed?: string;
+		message?: string;
+		startedAt: number;
+		updatedAt: number;
+	};
+}
+
 export interface ChatEventTypes {
 	message: Packed<'ChatMessageLite'>;
 	deleted: Packed<'ChatMessageLite'>['id'];
@@ -323,6 +340,10 @@ export type GlobalEvents = {
 		name: `reversiGameStream:${MiReversiGame['id']}`;
 		payload: EventTypesToEventPayload<ReversiGameEventTypes>;
 	};
+	videoTranscoding: {
+		name: 'videoTranscodingStream';
+		payload: EventTypesToEventPayload<VideoTranscodingEventTypes>;
+	};
 };
 
 // API event definitions
@@ -414,6 +435,11 @@ export class GlobalEventService {
 	@bindThis
 	public publishAdminStream<K extends keyof AdminEventTypes>(userId: MiUser['id'], type: K, value?: AdminEventTypes[K]): void {
 		this.publish(`adminStream:${userId}`, type, typeof value === 'undefined' ? null : value);
+	}
+
+	@bindThis
+	public publishVideoTranscodingStream<K extends keyof VideoTranscodingEventTypes>(type: K, value?: VideoTranscodingEventTypes[K]): void {
+		this.publish('videoTranscodingStream', type, typeof value === 'undefined' ? null : value);
 	}
 
 	@bindThis

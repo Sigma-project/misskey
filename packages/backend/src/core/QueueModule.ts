@@ -17,6 +17,7 @@ import {
 	UserWebhookDeliverJobData,
 	SystemWebhookDeliverJobData,
 	PostScheduledNoteJobData,
+	VideoTranscodingJobData,
 } from '../queue/types.js';
 import type { Provider } from '@nestjs/common';
 
@@ -30,6 +31,7 @@ export type RelationshipQueue = Bull.Queue<RelationshipJobData>;
 export type ObjectStorageQueue = Bull.Queue;
 export type UserWebhookDeliverQueue = Bull.Queue<UserWebhookDeliverJobData>;
 export type SystemWebhookDeliverQueue = Bull.Queue<SystemWebhookDeliverJobData>;
+export type VideoTranscodingQueue = Bull.Queue<VideoTranscodingJobData>;
 
 function createQueue<T extends object>(queueName: string, config: Config): Bull.Queue<T> {
 	return new Bull.Queue<T>(queueName, baseQueueOptions(config, queueName));
@@ -95,6 +97,12 @@ const $systemWebhookDeliver: Provider = {
 	inject: [DI.config],
 };
 
+const $videoTranscoding: Provider = {
+	provide: 'queue:videoTranscoding',
+	useFactory: (config: Config) => new Bull.Queue(QUEUE.VIDEO_TRANSCODING, baseQueueOptions(config, QUEUE.VIDEO_TRANSCODING)),
+	inject: [DI.config],
+};
+
 @Module({
 	imports: [
 	],
@@ -109,6 +117,7 @@ const $systemWebhookDeliver: Provider = {
 		$objectStorage,
 		$userWebhookDeliver,
 		$systemWebhookDeliver,
+		$videoTranscoding,
 	],
 	exports: [
 		$system,
@@ -121,6 +130,7 @@ const $systemWebhookDeliver: Provider = {
 		$objectStorage,
 		$userWebhookDeliver,
 		$systemWebhookDeliver,
+		$videoTranscoding,
 	],
 })
 export class QueueModule implements OnApplicationShutdown {
@@ -135,6 +145,7 @@ export class QueueModule implements OnApplicationShutdown {
 		@Inject('queue:objectStorage') public objectStorageQueue: ObjectStorageQueue,
 		@Inject('queue:userWebhookDeliver') public userWebhookDeliverQueue: UserWebhookDeliverQueue,
 		@Inject('queue:systemWebhookDeliver') public systemWebhookDeliverQueue: SystemWebhookDeliverQueue,
+		@Inject('queue:videoTranscoding') public videoTranscodingQueue: VideoTranscodingQueue,
 	) {}
 
 	public async dispose(): Promise<void> {
@@ -152,6 +163,7 @@ export class QueueModule implements OnApplicationShutdown {
 			this.objectStorageQueue.close(),
 			this.userWebhookDeliverQueue.close(),
 			this.systemWebhookDeliverQueue.close(),
+			this.videoTranscodingQueue.close(),
 		]);
 	}
 

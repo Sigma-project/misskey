@@ -755,6 +755,21 @@ export class MiMeta {
 		showTimelineForVisitor: boolean;
 		showActivitiesForVisitor: boolean;
 	};
+
+	@Column('boolean', {
+		default: false,
+	})
+	public enableVideoTranscoding: boolean;
+
+	@Column('bigint', {
+		default: 0, // 0 = unlimited
+	})
+	public videoTranscodeMaxFileSize: number;
+
+	@Column('integer', {
+		default: 0, // seconds, 0 = unlimited
+	})
+	public videoTranscodeMaxDuration: number;
 }
 
 export type SoftwareSuspension = {

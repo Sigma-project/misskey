@@ -84,7 +84,6 @@ SPDX-License-Identifier: AGPL-3.0-only
 							ref="videoEl"
 							data-gallery-click-action="video"
 							:class="[$style.video, { [$style.videoSized]: videoAspectRatio != null }]"
-							:src="content.url"
 							:alt="content.file?.comment ?? undefined"
 							draggable="false"
 							:controls="prefer.s.useNativeUiForVideoAudioPlayer"
@@ -191,6 +190,7 @@ import { makeDoubleTapDetector } from '@/utility/double-tap.js';
 import { deviceKind } from '@/utility/device-kind.js';
 import { isTouchUsing } from '@/utility/touch.js';
 import { getFileMenu } from '@/utility/get-file-menu.js';
+import { attachVideoSource } from '@/utility/attach-video-source.js';
 
 const props = withDefaults(defineProps<{
 	content: Content;
@@ -220,6 +220,12 @@ const thumbnailContentLoaded = ref(false);
 const enableTransition = ref(false);
 const infoShowing = ref(false);
 const hide = ref(true);
+// activated records whether an item has ever been opened; active tracks the current slide.
+const active = ref(props.initiallyOpened);
+watch([videoEl, active, hide, () => props.content.url, () => props.content.file?.hlsManifestUrl], ([el, isActive, isHidden, url, manifestUrl], _previous, onCleanup) => {
+	if (el == null || !isActive || isHidden) return;
+	onCleanup(attachVideoSource(el, url, manifestUrl));
+}, { flush: 'sync' });
 const isVideoPlaying = computed(() => videoControl.value?.isPlaying ?? false);
 const isVideoActuallyPlaying = computed(() => videoControl.value?.isActuallyPlaying ?? false);
 let canOpenAnimation = false;
@@ -407,6 +413,7 @@ function resetToNeutral() {
 }
 
 function closeThis() {
+	active.value = false;
 	emit('close');
 
 	infoShowing.value = false;
@@ -899,12 +906,11 @@ function openMenu(ev: PointerEvent) {
 }
 
 function onActive() {
-	if (videoEl.value != null) {
-		videoEl.value.play();
-	}
+	active.value = true;
 }
 
 function onDeactive() {
+	active.value = false;
 	if (isZooming.value) {
 		isZooming.value = false;
 		resetToNeutral();

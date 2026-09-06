@@ -206,6 +206,26 @@ export type Channels = {
 		};
 		receives: null;
 	};
+	videoTranscoding: {
+		params: null;
+		events: {
+			progress: (payload: {
+				fileId: string;
+				userId: string | null;
+				fileName: string;
+				phase: 'queued' | 'downloading' | 'probing' | 'encoding-av1' | 'encoding-vvc' | 'uploading' | 'done' | 'skipped' | 'failed';
+				percent: number;
+				overallPercent: number;
+				codec?: 'av1' | 'vvc';
+				fps?: number;
+				speed?: string;
+				message?: string;
+				startedAt: number;
+				updatedAt: number;
+			}) => void;
+		};
+		receives: null;
+	};
 	reversi: {
 		params: null;
 		events: {

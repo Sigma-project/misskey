@@ -38,6 +38,7 @@ import { ExportFavoritesProcessorService } from './processors/ExportFavoritesPro
 import { CleanRemoteFilesProcessorService } from './processors/CleanRemoteFilesProcessorService.js';
 import { DeleteFileProcessorService } from './processors/DeleteFileProcessorService.js';
 import { RelationshipProcessorService } from './processors/RelationshipProcessorService.js';
+import { VideoTranscodingProcessorService } from './processors/VideoTranscodingProcessorService.js';
 import { TickChartsProcessorService } from './processors/TickChartsProcessorService.js';
 import { ResyncChartsProcessorService } from './processors/ResyncChartsProcessorService.js';
 import { CleanChartsProcessorService } from './processors/CleanChartsProcessorService.js';
@@ -88,6 +89,7 @@ export class QueueProcessorService implements OnApplicationShutdown {
 	private objectStorageQueueWorker: Bull.Worker;
 	private endedPollNotificationQueueWorker: Bull.Worker;
 	private postScheduledNoteQueueWorker: Bull.Worker;
+	private videoTranscodingQueueWorker: Bull.Worker;
 
 	constructor(
 		@Inject(DI.config)
@@ -121,6 +123,7 @@ export class QueueProcessorService implements OnApplicationShutdown {
 		private deleteFileProcessorService: DeleteFileProcessorService,
 		private cleanRemoteFilesProcessorService: CleanRemoteFilesProcessorService,
 		private relationshipProcessorService: RelationshipProcessorService,
+		private videoTranscodingProcessorService: VideoTranscodingProcessorService,
 		private tickChartsProcessorService: TickChartsProcessorService,
 		private resyncChartsProcessorService: ResyncChartsProcessorService,
 		private cleanChartsProcessorService: CleanChartsProcessorService,
@@ -540,6 +543,18 @@ export class QueueProcessorService implements OnApplicationShutdown {
 			});
 		}
 		//#endregion
+
+		//#region video transcoding
+		{
+			this.videoTranscodingQueueWorker = new Bull.Worker(QUEUE.VIDEO_TRANSCODING, (job) => {
+				return this.telemetryService.startSpan('Queue: VideoTranscoding', () => this.videoTranscodingProcessorService.process(job));
+			}, {
+				...baseWorkerOptions(this.config, QUEUE.VIDEO_TRANSCODING),
+				autorun: false,
+				concurrency: this.config.videoTranscodingJobConcurrency ?? 1,
+			});
+		}
+		//#endregion
 	}
 
 	@bindThis
@@ -555,6 +570,7 @@ export class QueueProcessorService implements OnApplicationShutdown {
 			this.objectStorageQueueWorker.run(),
 			this.endedPollNotificationQueueWorker.run(),
 			this.postScheduledNoteQueueWorker.run(),
+			this.videoTranscodingQueueWorker.run(),
 		]);
 	}
 
@@ -571,6 +587,7 @@ export class QueueProcessorService implements OnApplicationShutdown {
 			this.objectStorageQueueWorker.close(),
 			this.endedPollNotificationQueueWorker.close(),
 			this.postScheduledNoteQueueWorker.close(),
+			this.videoTranscodingQueueWorker.close(),
 		]);
 	}
 

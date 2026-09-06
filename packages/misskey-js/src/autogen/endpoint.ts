@@ -140,6 +140,10 @@ import type {
 	AdminUpdateProxyAccountRequest,
 	AdminUpdateProxyAccountResponse,
 	AdminUpdateUserNoteRequest,
+	AdminVideoTranscodingCancelJobRequest,
+	AdminVideoTranscodingListJobsRequest,
+	AdminVideoTranscodingListJobsResponse,
+	AdminVideoTranscodingRetryJobRequest,
 	AnnouncementsRequest,
 	AnnouncementsResponse,
 	AnnouncementsShowRequest,
@@ -770,6 +774,9 @@ export type Endpoints = {
 	'admin/update-meta': { req: AdminUpdateMetaRequest; res: EmptyResponse };
 	'admin/update-proxy-account': { req: AdminUpdateProxyAccountRequest; res: AdminUpdateProxyAccountResponse };
 	'admin/update-user-note': { req: AdminUpdateUserNoteRequest; res: EmptyResponse };
+	'admin/video-transcoding/cancel-job': { req: AdminVideoTranscodingCancelJobRequest; res: EmptyResponse };
+	'admin/video-transcoding/list-jobs': { req: AdminVideoTranscodingListJobsRequest; res: AdminVideoTranscodingListJobsResponse };
+	'admin/video-transcoding/retry-job': { req: AdminVideoTranscodingRetryJobRequest; res: EmptyResponse };
 	'announcements': { req: AnnouncementsRequest; res: AnnouncementsResponse };
 	'announcements/show': { req: AnnouncementsShowRequest; res: AnnouncementsShowResponse };
 	'antennas/create': { req: AntennasCreateRequest; res: AntennasCreateResponse };

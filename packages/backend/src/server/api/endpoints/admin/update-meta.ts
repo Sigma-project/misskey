@@ -187,6 +187,9 @@ export const paramDef = {
 		urlPreviewTimeout: { type: 'integer' },
 		urlPreviewMaximumContentLength: { type: 'integer' },
 		urlPreviewRequireContentLength: { type: 'boolean' },
+		enableVideoTranscoding: { type: 'boolean' },
+		videoTranscodeMaxFileSize: { type: 'integer' },
+		videoTranscodeMaxDuration: { type: 'integer' },
 		urlPreviewUserAgent: { type: 'string', nullable: true },
 		urlPreviewSummaryProxyUrl: { type: 'string', nullable: true },
 		urlPreviewSensitiveList: {
@@ -724,6 +727,18 @@ export default class extends Endpoint<typeof meta, typeof paramDef> { // eslint-
 
 			if (ps.urlPreviewMaximumContentLength !== undefined) {
 				set.urlPreviewMaximumContentLength = ps.urlPreviewMaximumContentLength;
+			}
+
+			if (ps.enableVideoTranscoding !== undefined) {
+				set.enableVideoTranscoding = ps.enableVideoTranscoding;
+			}
+
+			if (ps.videoTranscodeMaxFileSize !== undefined) {
+				set.videoTranscodeMaxFileSize = ps.videoTranscodeMaxFileSize;
+			}
+
+			if (ps.videoTranscodeMaxDuration !== undefined) {
+				set.videoTranscodeMaxDuration = ps.videoTranscodeMaxDuration;
 			}
 
 			if (ps.urlPreviewRequireContentLength !== undefined) {

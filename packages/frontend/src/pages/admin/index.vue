@@ -152,6 +152,11 @@ const menuDef = computed<SuperMenuDef[]>(() => [{
 		to: '/admin/job-queue',
 		active: currentPage.value?.route.name === 'jobQueue',
 	}, {
+		icon: 'ti ti-movie',
+		text: 'Video Transcoding',
+		to: '/admin/video-transcoding',
+		active: currentPage.value?.route.name === 'videoTranscoding',
+	}, {
 		icon: 'ti ti-cloud',
 		text: i18n.ts.files,
 		to: '/admin/files',

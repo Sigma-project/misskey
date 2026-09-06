@@ -102,6 +102,7 @@ type Source = {
 	deliverJobConcurrency?: number;
 	inboxJobConcurrency?: number;
 	relationshipJobConcurrency?: number;
+	videoTranscodingJobConcurrency?: number;
 	deliverJobPerSec?: number;
 	inboxJobPerSec?: number;
 	relationshipJobPerSec?: number;
@@ -177,6 +178,7 @@ export type Config = {
 	deliverJobConcurrency: number | undefined;
 	inboxJobConcurrency: number | undefined;
 	relationshipJobConcurrency: number | undefined;
+	videoTranscodingJobConcurrency: number | undefined;
 	deliverJobPerSec: number | undefined;
 	inboxJobPerSec: number | undefined;
 	relationshipJobPerSec: number | undefined;
@@ -336,6 +338,7 @@ export function loadConfig(): Config {
 		deliverJobConcurrency: config.deliverJobConcurrency,
 		inboxJobConcurrency: config.inboxJobConcurrency,
 		relationshipJobConcurrency: config.relationshipJobConcurrency,
+		videoTranscodingJobConcurrency: config.videoTranscodingJobConcurrency,
 		deliverJobPerSec: config.deliverJobPerSec,
 		inboxJobPerSec: config.inboxJobPerSec,
 		relationshipJobPerSec: config.relationshipJobPerSec,

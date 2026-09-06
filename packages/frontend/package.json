@@ -45,6 +45,7 @@
 		"eventemitter3": "5.0.4",
 		"exifreader": "4.41.0",
 		"frontend-shared": "workspace:*",
+		"hls.js": "1.5.20",
 		"i18n": "workspace:*",
 		"icons-subsetter": "workspace:*",
 		"idb-keyval": "6.3.0",

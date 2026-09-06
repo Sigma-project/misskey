@@ -7,13 +7,13 @@ import { URL } from 'node:url';
 import * as http from 'node:http';
 import * as https from 'node:https';
 import { Injectable } from '@nestjs/common';
-import { DeleteObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { NodeHttpHandler, NodeHttpHandlerOptions } from '@smithy/node-http-handler';
 import type { MiMeta } from '@/models/Meta.js';
 import { HttpRequestService } from '@/core/HttpRequestService.js';
 import { bindThis } from '@/decorators.js';
-import type { DeleteObjectCommandInput, PutObjectCommandInput } from '@aws-sdk/client-s3';
+import type { DeleteObjectCommandInput, PutObjectCommandInput, ListObjectsV2CommandOutput } from '@aws-sdk/client-s3';
 
 @Injectable()
 export class S3Service {
@@ -67,5 +67,42 @@ export class S3Service {
 	public delete(meta: MiMeta, input: DeleteObjectCommandInput) {
 		const client = this.getS3Client(meta);
 		return client.send(new DeleteObjectCommand(input));
+	}
+
+	/**
+	 * 指定プレフィックス配下のオブジェクトを全件削除する。
+	 * ListObjectsV2（最大1000件/ページ）→ DeleteObjects（最大1000件）を継続トークンでループ。
+	 */
+	@bindThis
+	public async deletePrefix(meta: MiMeta, prefix: string) {
+		// 空・ルート相当のprefixはバケット全削除事故を招くため拒否する
+		if (prefix === '' || prefix === '/') {
+			throw new Error('deletePrefix refused: empty or root prefix');
+		}
+
+		const client = this.getS3Client(meta);
+		const bucket = meta.objectStorageBucket ?? undefined;
+		let continuationToken: string | undefined = undefined;
+
+		do {
+			const listed: ListObjectsV2CommandOutput = await client.send(new ListObjectsV2Command({
+				Bucket: bucket,
+				Prefix: prefix,
+				ContinuationToken: continuationToken,
+			}));
+
+			const objects = listed.Contents ?? [];
+			if (objects.length > 0) {
+				await client.send(new DeleteObjectsCommand({
+					Bucket: bucket,
+					Delete: {
+						Objects: objects.map(o => ({ Key: o.Key })),
+						Quiet: true,
+					},
+				}));
+			}
+
+			continuationToken = listed.IsTruncated ? listed.NextContinuationToken : undefined;
+		} while (continuationToken);
 	}
 }

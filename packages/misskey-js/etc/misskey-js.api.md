@@ -461,6 +461,18 @@ type AdminUpdateProxyAccountResponse = operations['admin___update-proxy-account'
 type AdminUpdateUserNoteRequest = operations['admin___update-user-note']['requestBody']['content']['application/json'];
 
 // @public (undocumented)
+type AdminVideoTranscodingCancelJobRequest = operations['admin___video-transcoding___cancel-job']['requestBody']['content']['application/json'];
+
+// @public (undocumented)
+type AdminVideoTranscodingListJobsRequest = operations['admin___video-transcoding___list-jobs']['requestBody']['content']['application/json'];
+
+// @public (undocumented)
+type AdminVideoTranscodingListJobsResponse = operations['admin___video-transcoding___list-jobs']['responses']['200']['content']['application/json'];
+
+// @public (undocumented)
+type AdminVideoTranscodingRetryJobRequest = operations['admin___video-transcoding___retry-job']['requestBody']['content']['application/json'];
+
+// @public (undocumented)
 type Announcement = components['schemas']['Announcement'];
 
 // @public (undocumented)
@@ -829,6 +841,26 @@ export type Channels = {
                 reporterId: string;
                 comment: string;
             };
+        };
+        receives: null;
+    };
+    videoTranscoding: {
+        params: null;
+        events: {
+            progress: (payload: {
+                fileId: string;
+                userId: string | null;
+                fileName: string;
+                phase: 'queued' | 'downloading' | 'probing' | 'encoding-av1' | 'encoding-vvc' | 'uploading' | 'done' | 'skipped' | 'failed';
+                percent: number;
+                overallPercent: number;
+                codec?: 'av1' | 'vvc';
+                fps?: number;
+                speed?: string;
+                message?: string;
+                startedAt: number;
+                updatedAt: number;
+            }) => void;
         };
         receives: null;
     };
@@ -1676,6 +1708,10 @@ declare namespace entities {
         AdminUpdateProxyAccountRequest,
         AdminUpdateProxyAccountResponse,
         AdminUpdateUserNoteRequest,
+        AdminVideoTranscodingCancelJobRequest,
+        AdminVideoTranscodingListJobsRequest,
+        AdminVideoTranscodingListJobsResponse,
+        AdminVideoTranscodingRetryJobRequest,
         AnnouncementsRequest,
         AnnouncementsResponse,
         AnnouncementsShowRequest,
@@ -3254,7 +3290,7 @@ type QueueStats = {
 type QueueStatsLog = QueueStats[];
 
 // @public (undocumented)
-export const queueTypes: readonly ["system", "endedPollNotification", "postScheduledNote", "deliver", "inbox", "db", "relationship", "objectStorage", "userWebhookDeliver", "systemWebhookDeliver"];
+export const queueTypes: readonly ["system", "endedPollNotification", "postScheduledNote", "deliver", "inbox", "db", "relationship", "objectStorage", "userWebhookDeliver", "systemWebhookDeliver", "videoTranscoding"];
 
 // @public (undocumented)
 type RenoteMuteCreateRequest = operations['renote-mute___create']['requestBody']['content']['application/json'];
@@ -3771,8 +3807,8 @@ type VerifyEmailRequest = operations['verify-email']['requestBody']['content']['
 // Warnings were encountered during analysis:
 //
 // src/streaming.ts:57:3 - (ae-forgotten-export) The symbol "ReconnectingWebSocket" needs to be exported by the entry point index.d.ts
-// src/streaming.types.ts:226:4 - (ae-forgotten-export) The symbol "ReversiUpdateKey" needs to be exported by the entry point index.d.ts
-// src/streaming.types.ts:241:4 - (ae-forgotten-export) The symbol "ReversiUpdateSettings" needs to be exported by the entry point index.d.ts
+// src/streaming.types.ts:246:4 - (ae-forgotten-export) The symbol "ReversiUpdateKey" needs to be exported by the entry point index.d.ts
+// src/streaming.types.ts:261:4 - (ae-forgotten-export) The symbol "ReversiUpdateSettings" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

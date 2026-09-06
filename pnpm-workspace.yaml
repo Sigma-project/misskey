@@ -13,6 +13,9 @@ packages:
   - packages/misskey-bubble-game
   - packages-private/*
 packageExtensions:
+  sharp@0.33.5:
+    dependencies:
+      node-addon-api: 7.1.1
   sharp@0.35.3:
     dependencies:
       node-addon-api: ^8.8.0

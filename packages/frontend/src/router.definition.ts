@@ -415,6 +415,10 @@ export const ROUTE_DEF = [{
 		name: 'jobQueue',
 		component: page(() => import('@/pages/admin/job-queue.vue')),
 	}, {
+		path: '/video-transcoding',
+		name: 'videoTranscoding',
+		component: page(() => import('@/pages/admin/video-transcoding.vue')),
+	}, {
 		path: '/files',
 		name: 'files',
 		component: page(() => import('@/pages/admin/files.vue')),
