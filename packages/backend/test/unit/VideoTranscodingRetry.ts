@@ -48,4 +48,11 @@ describe('video transcoding retry', () => {
 		expect(ctx.repository.update).toHaveBeenCalledWith('video1', { transcodingStatus: 'pending' });
 		expect(ctx.queue.createVideoTranscodingJob).toHaveBeenCalledWith('video1');
 	});
+
+	test('retries a cancelled file after the old job has already disappeared', async () => {
+		const ctx = harness();
+		await ctx.run();
+		expect(ctx.repository.update).toHaveBeenCalledWith('video1', { transcodingStatus: 'pending' });
+		expect(ctx.queue.createVideoTranscodingJob).toHaveBeenCalledWith('video1');
+	});
 });
