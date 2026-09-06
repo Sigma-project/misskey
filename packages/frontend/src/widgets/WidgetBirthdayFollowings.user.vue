@@ -35,11 +35,6 @@ const props = defineProps<{
 }>();
 
 const now = useLowresTime();
-const birthdayDate = computed(() => {
-	const [year, month, day] = props.item.birthday.split('-').map((v) => parseInt(v, 10));
-	return new Date(year, month - 1, day, 0, 0, 0, 0);
-});
-
 const countdownDate = computed(() => {
 	const days = getBirthdayCountdown(props.item.birthday, new Date(now.value));
 	if (days === 0) {
