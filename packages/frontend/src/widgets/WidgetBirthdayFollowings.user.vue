@@ -35,11 +35,6 @@ const props = defineProps<{
 }>();
 
 const now = useLowresTime();
-const nowDate = computed(() => {
-	const date = new Date(now.value);
-	date.setHours(0, 0, 0, 0);
-	return date;
-});
 const birthdayDate = computed(() => {
 	const [year, month, day] = props.item.birthday.split('-').map((v) => parseInt(v, 10));
 	return new Date(year, month - 1, day, 0, 0, 0, 0);
