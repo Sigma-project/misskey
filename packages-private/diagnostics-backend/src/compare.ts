@@ -78,6 +78,7 @@ type GenSampleOptions = {
 };
 
 async function genSample(label: string, repoDir: string, round: number, options: GenSampleOptions = {}) {
+	const nodePath = readOptionalEnv(`MK_MEMORY_${label.toUpperCase()}_NODE`) ?? process.execPath;
 	process.stderr.write(`[${label}] Resetting database and Redis\n`);
 	await resetState();
 
@@ -85,12 +86,14 @@ async function genSample(label: string, repoDir: string, round: number, options:
 	// 出力はログとして流しつつ手元にも残す (失敗時にexecaが例外メッセージへ含めてくれる)
 	await execa('pnpm', ['--filter', 'backend', 'migrate'], {
 		cwd: repoDir,
+		env: { PATH: readOptionalEnv(`MK_MEMORY_${label.toUpperCase()}_PATH`) ?? process.env.PATH },
 		stdout: ['pipe', process.stderr],
 		stderr: ['pipe', process.stderr],
 	});
 
 	process.stderr.write(`[${label}] Measuring memory\n`);
 	return await measureBackendMemory(resolve(repoDir, 'packages/backend'), {
+		nodePath,
 		// warmupラウンド (round <= 0) は捨てるので、重いheap snapshotは取らない
 		...(round <= 0 || options.collectHeapSnapshot === false ? { heapSnapshot: false } : {}),
 		heapSnapshotSavePath: options.heapSnapshotSavePath ?? null,
