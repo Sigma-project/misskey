@@ -53,6 +53,7 @@ export const paramDef = {
 	properties: {
 		limit: { type: 'integer', minimum: 1, maximum: 100, default: 10 },
 		offset: { type: 'integer', default: 0 },
+		year: { type: 'integer', minimum: 1, maximum: 9998, description: 'Calendar year of the beginning of the birthday range. Defaults to the next occurrence in the server calendar.' },
 		birthday: {
 			oneOf: [{
 				type: 'object',
