@@ -18,4 +18,13 @@ describe('native HLS codec fallback', () => {
 		expect(el.src).toBe('https://example.com/next.mp4');
 		cleanup();
 	});
+
+	test('removes the error fallback when the video is deactivated or unmounted', () => {
+		const el = document.createElement('video');
+		const cleanup = attachNativeHlsSource(el, 'https://example.com/master.m3u8', 'https://example.com/original.mp4');
+		cleanup();
+		el.src = 'https://example.com/next.mp4';
+		el.dispatchEvent(new Event('error'));
+		expect(el.src).toBe('https://example.com/next.mp4');
+	});
 });
