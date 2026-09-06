@@ -7,6 +7,7 @@
 		"node": "^22.22.2 || ^24.17.0 || ^26.4.0"
 	},
 	"scripts": {
+		"postinstall": "node ../../scripts/build-sharp.mjs",
 		"start": "pnpm compile-config && node ./built/entry.js",
 		"start:inspect": "pnpm compile-config && node --inspect ./built/entry.js",
 		"start:test": "cross-env NODE_ENV=test pnpm compile-config && cross-env NODE_ENV=test node ./built/entry.js",

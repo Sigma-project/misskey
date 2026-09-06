@@ -10,6 +10,8 @@ overrides:
   chokidar: 5.0.0
   lodash: 4.18.1
 
+packageExtensionsChecksum: sha256-Kbc1i5VMobBiDFSwzsKIrXCPqiEFVjm7bnoRBkEHQxE=
+
 importers:
 
   .:
@@ -7052,6 +7054,10 @@ packages:
 
   node-addon-api@7.1.1:
     resolution: {integrity: sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==}
+
+  node-addon-api@8.9.2:
+    resolution: {integrity: sha512-VijLXbi3UACN69I0JVXJsX4tjACjNoQDgv2gTF6sx2wWEi8tkSg2eX8p5gSIFi8z2+DL3oHmY6OyKce38SDolg==}
+    engines: {node: ^18 || ^20 || >= 21}
 
   node-domexception@1.0.0:
     resolution: {integrity: sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ==}
@@ -15723,6 +15729,8 @@ snapshots:
   node-addon-api@7.1.1:
     optional: true
 
+  node-addon-api@8.9.2: {}
+
   node-domexception@1.0.0: {}
 
   node-exports-info@1.6.0:
@@ -16969,6 +16977,8 @@ snapshots:
     dependencies:
       '@img/colour': 1.1.0
       detect-libc: 2.1.2
+      node-addon-api: 8.9.2
+      node-gyp: 13.0.0
       semver: 7.8.5
     optionalDependencies:
       '@img/sharp-darwin-arm64': 0.35.3

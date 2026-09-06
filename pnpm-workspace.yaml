@@ -12,6 +12,11 @@ packages:
   - packages/misskey-reversi
   - packages/misskey-bubble-game
   - packages-private/*
+packageExtensions:
+  sharp@0.35.3:
+    dependencies:
+      node-addon-api: ^8.8.0
+      node-gyp: 13.0.0
 allowBuilds:
   '@nestjs/core': true
   '@parcel/watcher': true
