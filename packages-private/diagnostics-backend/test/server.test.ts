@@ -4,9 +4,50 @@
  */
 
 import { EventEmitter } from 'node:events';
-import type { ChildProcess } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { waitForMessage } from '../src/measure/server';
+import { forkBackendServer, getRuntimeMemoryUsage, requestHeapSnapshot, shutdownBackendServer, triggerGc, waitForMessage, waitForServerReady } from '../src/measure/server';
+import type { ChildProcess } from 'node:child_process';
+
+describe('forkBackendServer', () => {
+	test.each([
+		{ legacy: false, oldGc: true },
+		{ legacy: true, oldGc: true },
+		{ legacy: true, oldGc: false },
+	])('supports legacy=$legacy with existing GC=$oldGc', async ({ legacy, oldGc }) => {
+		const dir = mkdtempSync(join(tmpdir(), 'diagnostics-backend-'));
+		let child: ChildProcess | undefined;
+		try {
+			mkdirSync(join(dir, 'built/boot'), { recursive: true });
+			const ipc = `${oldGc ? 'process.on("message", msg => { if (msg === "gc") { global.gc(); process.send("gc ok"); } });' : ''} process.send('ok');`;
+			writeFileSync(join(dir, 'built/boot/entry.js'), legacy ? ipc : 'throw new Error(\'legacy entry must not run\');');
+			if (!legacy) {
+				writeFileSync(join(dir, 'built/entry.js'), `process.on('message', msg => { if (msg === 'memory usage') process.send({type:'memory usage', value:process.memoryUsage()}); }); ${ipc}`);
+			}
+			child = forkBackendServer(dir);
+			await waitForServerReady(child, 5000);
+			const gcReplies: unknown[] = [];
+			child.on('message', message => { if (message === 'gc ok') gcReplies.push(message); });
+			await triggerGc(child, 5000);
+			const memory = await getRuntimeMemoryUsage(child, 5000);
+			expect(gcReplies).toEqual(['gc ok']);
+			expect(memory.HeapUsed).toBeGreaterThan(0);
+			if (legacy) {
+				const snapshot = join(dir, 'snapshot.heapsnapshot');
+				expect(await requestHeapSnapshot(child, snapshot, 10000)).toBe(snapshot);
+				expect(statSync(snapshot).size).toBeGreaterThan(0);
+				await expect(requestHeapSnapshot(child, join(dir, 'missing/snapshot'), 5000)).rejects.toThrow('Failed to write heap snapshot');
+			} else {
+				expect(child.spawnargs).not.toContain('--require');
+			}
+		} finally {
+			if (child) await shutdownBackendServer(child);
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
 
 /** waitForMessage が使うのは message/exit/error/disconnect の購読だけなので EventEmitter で足りる */
 function createFakeServer() {
