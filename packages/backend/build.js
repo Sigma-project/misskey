@@ -7,6 +7,7 @@ import { swcPlugin } from 'esbuild-plugin-swc';
 const _filename = fileURLToPath(import.meta.url);
 const _dirname = dirname(_filename);
 const _package = JSON.parse(fs.readFileSync(_dirname + '/package.json', 'utf-8'));
+const swcConfig = JSON.parse(fs.readFileSync(join(_dirname, '.swcrc'), 'utf-8'));
 
 const resolveTsPathsPlugin = {
 	name: 'resolve-ts-paths',
@@ -56,15 +57,8 @@ const options = {
 		resolveTsPathsPlugin,
 		swcPlugin({
 			jsc: {
-				parser: {
-					syntax: 'typescript',
-					decorators: true,
-					dynamicImport: true,
-				},
-				transform: {
-					legacyDecorator: true,
-					decoratorMetadata: true,
-				},
+				parser: swcConfig.jsc.parser,
+				transform: swcConfig.jsc.transform,
 				experimental: {
 					keepImportAssertions: true,
 				},
