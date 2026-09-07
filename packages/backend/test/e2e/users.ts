@@ -6,9 +6,11 @@
 process.env.NODE_ENV = 'test';
 
 import * as assert from 'assert';
+import { beforeAll, beforeEach, describe, test } from 'vitest';
 import { inspect } from 'node:util';
-import { api, post, role, signup, successfulApiCall, uploadFile } from '../utils.js';
+import { api, initTestDb, post, role, signup, successfulApiCall, uploadFile } from '../utils.js';
 import type * as misskey from 'misskey-js';
+import { BirthdayIndex1767169026317 } from '../../migration/1767169026317-birthday-index.js';
 import { DEFAULT_POLICIES } from '@/core/RoleService.js';
 
 describe('ユーザー', () => {
@@ -890,4 +892,71 @@ describe('ユーザー', () => {
 	test.todo('を管理人として確認することができる(admin/show-user)');
 	test.todo('を管理人として確認することができる(admin/show-users)');
 	test.todo('をサーバー向けに取得することができる(federation/users)');
+});
+
+
+describe('Following birthdays', () => {
+	let viewer: misskey.entities.SignupResponse;
+	const users = new Map<string, misskey.entities.SignupResponse>();
+
+	beforeAll(async () => {
+		// Schema synchronization omits expression indexes and functions created by migrations.
+		const connection = await initTestDb(true);
+		const queryRunner = connection.createQueryRunner();
+		try {
+			await queryRunner.query('CREATE INDEX IF NOT EXISTS "IDX_de22cd2b445eee31ae51cdbe99" ON "user_profile" (substr("birthday", 6, 5))');
+			await new BirthdayIndex1767169026317().up(queryRunner);
+		} finally {
+			await queryRunner.release();
+			await connection.destroy();
+		}
+
+		viewer = await signup({ username: 'birthdayviewer' });
+		for (const [username, birthday] of [
+			['birthdaydecember', '2000-12-31'],
+			['birthdayjanuary', '2000-01-01'],
+			['birthdayleap', '2000-02-29'],
+			['birthdaymarch', '2000-03-01'],
+			['birthdaymarchtwo', '2000-03-01'],
+		] as const) {
+			const user = await signup({ username });
+			await successfulApiCall({ endpoint: 'i/update', parameters: { birthday }, user });
+			await successfulApiCall({ endpoint: 'following/create', parameters: { userId: user.id }, user: viewer });
+			users.set(username, user);
+		}
+	});
+
+	test('paginates wrapped ranges in occurrence order in the requester calendar', async () => {
+		const parameters = { year: 2025, birthday: { begin: { month: 12, day: 31 }, end: { month: 1, day: 1 } }, limit: 1 };
+		const first = await successfulApiCall({ endpoint: 'users/get-following-users-by-birthday', parameters, user: viewer });
+		const second = await successfulApiCall({ endpoint: 'users/get-following-users-by-birthday', parameters: { ...parameters, offset: 1 }, user: viewer });
+		assert.strictEqual(first[0].id, users.get('birthdaydecember')!.id);
+		assert.strictEqual(first[0].birthday, '2025-12-31');
+		assert.strictEqual(second[0].id, users.get('birthdayjanuary')!.id);
+		assert.strictEqual(second[0].birthday, '2026-01-01');
+	});
+
+	test('includes leap-day birthdays on March 1 in common years with stable pagination', async () => {
+		const parameters = { year: 2026, birthday: { month: 3, day: 1 } };
+		const result = await successfulApiCall({ endpoint: 'users/get-following-users-by-birthday', parameters, user: viewer });
+		assert.strictEqual(result.length, 3);
+		assert.ok(result.every(item => item.birthday === '2026-03-01'));
+		assert.deepStrictEqual(result.map(item => item.id), [...result.map(item => item.id)].sort());
+		for (let offset = 0; offset < result.length; offset++) {
+			const page = await successfulApiCall({ endpoint: 'users/get-following-users-by-birthday', parameters: { ...parameters, limit: 1, offset }, user: viewer });
+			assert.strictEqual(page[0].id, result[offset].id);
+		}
+	});
+
+	test('retains February 29 in leap years, including ranges crossing into a leap year', async () => {
+		const result = await successfulApiCall({ endpoint: 'users/get-following-users-by-birthday', parameters: { year: 2027, birthday: { begin: { month: 12, day: 31 }, end: { month: 3, day: 1 } } }, user: viewer });
+		assert.strictEqual(result.find(item => item.id === users.get('birthdayleap')!.id)!.birthday, '2028-02-29');
+		const march = await successfulApiCall({ endpoint: 'users/get-following-users-by-birthday', parameters: { year: 2028, birthday: { month: 3, day: 1 } }, user: viewer });
+		assert.strictEqual(march.length, 2);
+	});
+
+	test('continues to accept requests without a calendar year', async () => {
+		const result = await successfulApiCall({ endpoint: 'users/get-following-users-by-birthday', parameters: { birthday: { month: 12, day: 31 } }, user: viewer });
+		assert.strictEqual(result[0].id, users.get('birthdaydecember')!.id);
+	});
 });

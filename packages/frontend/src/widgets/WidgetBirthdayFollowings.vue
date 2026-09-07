@@ -9,16 +9,16 @@ SPDX-License-Identifier: AGPL-3.0-only
 	<template #header>{{ i18n.ts._widgets.birthdayFollowings }}</template>
 	<template #func="{ buttonStyleClass }"><button class="_button" :class="buttonStyleClass" @click="fetch"><i class="ti ti-refresh"></i></button></template>
 
-	<MkPagination v-slot="{ items }" :paginator="birthdayUsersPaginator">
+	<MkPagination v-if="$i" v-slot="{ items }" :paginator="birthdayUsersPaginator">
 		<div>
 			<template v-for="(user, i) in items" :key="user.id">
 				<div
-					v-if="i > 0 && isSeparatorNeeded(birthdayUsersPaginator.items.value[i - 1].birthday, user.birthday)"
+					v-if="i > 0 && items[i - 1].birthday !== user.birthday"
 				>
 					<div :class="$style.date">
-						<span><i class="ti ti-chevron-up"></i> {{ getSeparatorInfo(birthdayUsersPaginator.items.value[i - 1].birthday, user.birthday)?.prevText }}</span>
+						<span><i class="ti ti-chevron-up"></i> {{ formatBirthdayDate(items[i - 1].birthday) }}</span>
 						<span style="height: 1em; width: 1px; background: var(--MI_THEME-divider);"></span>
-						<span>{{ getSeparatorInfo(birthdayUsersPaginator.items.value[i - 1].birthday, user.birthday)?.nextText }} <i class="ti ti-chevron-down"></i></span>
+						<span>{{ formatBirthdayDate(user.birthday) }} <i class="ti ti-chevron-down"></i></span>
 					</div>
 					<XUser :class="$style.user" :item="user" />
 				</div>
@@ -32,7 +32,8 @@ SPDX-License-Identifier: AGPL-3.0-only
 <script lang="ts" setup>
 import { computed, markRaw, ref, watch } from 'vue';
 import { useLowresTime } from '@/composables/use-lowres-time.js';
-import { isSeparatorNeeded, getSeparatorInfo } from '@/utility/timeline-date-separate.js';
+import { formatBirthdayDate, getBirthdayRangeEnd } from '@/utility/birthday-calendar.js';
+import { $i } from '@/i.js';
 import { useWidgetPropsManager } from './widget.js';
 import type { WidgetComponentEmits, WidgetComponentExpose, WidgetComponentProps } from './widget.js';
 import type { FormWithDefault, GetFormResultType } from '@/utility/form.js';
@@ -93,25 +94,15 @@ nextDay.setHours(24, 0, 0, 0);
 let nextDayMidnightTime = nextDay.getTime();
 
 const begin = ref<Date>(new Date());
-const end = computed(() => {
-	switch (widgetProps.period) {
-		case '3day':
-			return new Date(begin.value.getTime() + 1000 * 60 * 60 * 24 * 3);
-		case 'week':
-			return new Date(begin.value.getTime() + 1000 * 60 * 60 * 24 * 7);
-		case 'month':
-			return new Date(begin.value.getTime() + 1000 * 60 * 60 * 24 * 30);
-		default:
-			return begin.value;
-	}
-});
+const end = computed(() => getBirthdayRangeEnd(begin.value, widgetProps.period));
 
-const birthdayUsersPaginator = markRaw(new Paginator('users/get-following-birthday-users', {
+const birthdayUsersPaginator = markRaw(new Paginator('users/get-following-users-by-birthday', {
 	limit: 18,
 	offsetMode: true,
 	computedParams: computed(() => {
 		if (widgetProps.period === 'today') {
 			return {
+				year: begin.value.getFullYear(),
 				birthday: {
 					month: begin.value.getMonth() + 1,
 					day: begin.value.getDate(),
@@ -119,6 +110,7 @@ const birthdayUsersPaginator = markRaw(new Paginator('users/get-following-birthd
 			};
 		} else {
 			return {
+				year: begin.value.getFullYear(),
 				birthday: {
 					begin: {
 						month: begin.value.getMonth() + 1,

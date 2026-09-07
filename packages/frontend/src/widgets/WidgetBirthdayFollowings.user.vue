@@ -14,7 +14,7 @@ SPDX-License-Identifier: AGPL-3.0-only
 			</template>
 		</MkUserCardMini>
 	</MkA>
-	<button v-tooltip.noDelay="i18n.ts.note" class="_button" :class="$style.post" @click="os.post({initialText: `@${item.user.username}${item.user.host ? `@${item.user.host}` : ''} `})">
+	<button v-tooltip.noDelay="i18n.ts.note" class="_button" :class="$style.post" @click="os.post({initialText: `@${item.user.username}${item.user.host ? `@${item.user.host}` : ''} `, instant: true})">
 		<i class="ti-fw ti ti-confetti" :class="$style.postIcon"></i>
 	</button>
 </div>
@@ -27,25 +27,16 @@ import MkUserCardMini from '@/components/MkUserCardMini.vue';
 import * as os from '@/os.js';
 import { i18n } from '@/i18n.js';
 import { useLowresTime } from '@/composables/use-lowres-time.js';
+import { getBirthdayCountdown } from '@/utility/birthday-calendar.js';
 import { userPage, acct } from '@/filters/user.js';
 
 const props = defineProps<{
-	item: Misskey.entities.UsersGetFollowingBirthdayUsersResponse[number];
+	item: Misskey.entities.UsersGetFollowingUsersByBirthdayResponse[number];
 }>();
 
 const now = useLowresTime();
-const nowDate = computed(() => {
-	const date = new Date(now.value);
-	date.setHours(0, 0, 0, 0);
-	return date;
-});
-const birthdayDate = computed(() => {
-	const [year, month, day] = props.item.birthday.split('-').map((v) => parseInt(v, 10));
-	return new Date(year, month - 1, day, 0, 0, 0, 0);
-});
-
 const countdownDate = computed(() => {
-	const days = Math.floor((birthdayDate.value.getTime() - nowDate.value.getTime()) / (1000 * 60 * 60 * 24));
+	const days = getBirthdayCountdown(props.item.birthday, new Date(now.value));
 	if (days === 0) {
 		return i18n.ts.today;
 	} else if (days > 0) {

@@ -1,5 +1,5 @@
 [tools]
-node = "22"
+node = "26.4.0"
 
 [env]
 SHARP_FORCE_GLOBAL_LIBVIPS = "1"
@@ -81,11 +81,11 @@ depends = ["ci:build"]
 run = "pnpm --filter frontend test-and-coverage"
 
 [tasks."ci:test:frontend:e2e"]
-description = "Run frontend Cypress E2E tests (requires browser)"
+description = "Run frontend Playwright E2E tests (requires browser)"
 depends = ["ci:build", "ci:services:up"]
 run = [
-  "pnpm exec cypress install",
-  "pnpm exec start-server-and-test 'pnpm start:test' http://localhost:61812 'pnpm exec cypress run --browser chrome'",
+  "pnpm --filter frontend exec playwright install --with-deps chromium",
+  "pnpm start-server-and-test start:test http://localhost:61812 'pnpm --filter frontend test:e2e'",
 ]
 
 [tasks."ci:test:misskey-js"]

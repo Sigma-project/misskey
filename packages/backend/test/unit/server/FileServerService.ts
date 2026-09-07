@@ -7,7 +7,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, test, beforeAll, afterAll, afterEach } from 'vitest';
 import sharp from 'sharp';
 import { DataSource, type Repository } from 'typeorm';
 import { initTestDb, randomString } from '../../utils.js';
@@ -19,8 +19,8 @@ import { ImageProcessingService } from '@/core/ImageProcessingService.js';
 import { InternalStorageService } from '@/core/InternalStorageService.js';
 import { IdService } from '@/core/IdService.js';
 import { LoggerService } from '@/core/LoggerService.js';
-import { WasmVipsService } from '@/core/WasmVipsService.js';
 import { VideoProcessingService } from '@/core/VideoProcessingService.js';
+import { WasmVipsService } from '@/core/WasmVipsService.js';
 import { loadConfig, type Config } from '@/config.js';
 import { MiDriveFile } from '@/models/DriveFile.js';
 import { FileServerService } from '@/server/FileServerService.js';
@@ -150,6 +150,7 @@ describe('FileServerService', () => {
 		const loggerService = new LoggerService();
 		const aiService = {
 			detectSensitive: async () => null,
+			detectSensitiveMany: async (sources: Buffer[]) => sources.map(() => null),
 		} as unknown as AiService;
 		const fileInfoService = new FileInfoService(aiService, loggerService);
 		const httpRequestService = new HttpRequestService(config);
@@ -240,6 +241,45 @@ describe('FileServerService', () => {
 		}
 	});
 
+	describe('GET /transcoded/:prefix/*', () => {
+		test.each([
+			{ filename: 'master.m3u8', range: undefined, status: 200, body: '0123456789', type: 'application/vnd.apple.mpegurl', cache: 'max-age=10' },
+			{ filename: 'av1/seg-001.m4s', range: undefined, status: 200, body: '0123456789', type: 'video/iso.segment', cache: 'max-age=31536000, immutable' },
+			{ filename: 'av1/seg-001.m4s', range: 'bytes=2-4', status: 206, body: '234', type: 'video/iso.segment', cache: 'max-age=31536000, immutable' },
+			{ filename: 'av1/seg-001.m4s', range: 'bytes=-3', status: 206, body: '789', type: 'video/iso.segment', cache: 'max-age=31536000, immutable' },
+			{ filename: 'av1/seg-001.m4s', range: 'bytes=20-', status: 416, body: '', type: 'video/iso.segment', cache: 'max-age=31536000, immutable' },
+		])('serves $filename with $range', async ({ filename, range, status, body, type, cache }) => {
+			const prefix = `stream-${idService.gen()}-test`;
+			try {
+				internalStorageService.saveFromBuffer(`${prefix}/${filename}`, Buffer.from('0123456789'));
+				const res = await fastify.inject({
+					method: 'GET',
+					url: `/transcoded/${prefix}/${filename}`,
+					headers: range ? { range } : {},
+				});
+
+				expect(res.statusCode).toBe(status);
+				expect(res.body).toBe(body);
+				expect(res.headers['content-type']).toBe(type);
+				expect(res.headers['cache-control']).toBe(cache);
+				if (status === 206) {
+					expect(res.headers['content-range']).toBe(range === 'bytes=-3' ? 'bytes 7-9/10' : 'bytes 2-4/10');
+				} else if (status === 416) {
+					expect(res.headers['content-range']).toBe('bytes */10');
+				}
+			} finally {
+				fs.rmSync(internalStorageService.resolvePath(prefix), { recursive: true, force: true });
+			}
+		});
+
+		test('rejects unsupported extensions and traversal', async () => {
+			for (const suffix of ['secret.txt', 'av1%2F..%2Fmaster.m3u8', 'av1%5Cmaster.m3u8']) {
+				const res = await fastify.inject({ method: 'GET', url: `/transcoded/stream-test-test/${suffix}` });
+				expect(res.statusCode).toBe(404);
+			}
+		});
+	});
+
 	describe('GET /files/app-default.jpg', () => {
 		test('GET /files/app-default.jpg ヘッダを検証する', async () => {
 			const prevNodeEnv = process.env.NODE_ENV;
@@ -300,7 +340,7 @@ describe('FileServerService', () => {
 			});
 
 			expect(res.statusCode).toBe(404);
-			expect(res.headers['cache-control']).toBe('max-age=86400');
+			expect(res.headers['cache-control']).toBe('public, max-age=0');
 		});
 
 		test('GET /files/:key 画像配信ヘッダを検証する', async () => {
@@ -660,7 +700,7 @@ describe('FileServerService', () => {
 			expect(res.headers['cache-control']).toBe('max-age=300');
 		});
 
-		test('GET /proxy/:url* emoji static で JXL を返す', async () => {
+		test('GET /proxy/:url* emoji static で jxl を返す', async () => {
 			const res = await fastify.inject({
 				method: 'GET',
 				url: `/proxy/any?url=${encodeURIComponent(remotePngUrl)}&emoji=1&static=1`,
@@ -675,7 +715,7 @@ describe('FileServerService', () => {
 			expect(res.headers['content-disposition'] ?? '').toContain('dummy.jxl');
 		});
 
-		test('GET /proxy/:url* avatar static で JXL を返す', async () => {
+		test('GET /proxy/:url* avatar static で jxl を返す', async () => {
 			const res = await fastify.inject({
 				method: 'GET',
 				url: `/proxy/any?url=${encodeURIComponent(remotePngUrl)}&avatar=1&static=1`,
@@ -690,7 +730,7 @@ describe('FileServerService', () => {
 			expect(res.headers['content-disposition'] ?? '').toContain('dummy.jxl');
 		});
 
-		test('GET /proxy/:url* static で JXL を返す', async () => {
+		test('GET /proxy/:url* static で jxl を返す', async () => {
 			const res = await fastify.inject({
 				method: 'GET',
 				url: `/proxy/any?url=${encodeURIComponent(remotePngUrl)}&static=1`,
@@ -705,7 +745,7 @@ describe('FileServerService', () => {
 			expect(res.headers['content-disposition'] ?? '').toContain('dummy.jxl');
 		});
 
-		test('GET /proxy/:url* preview で JXL を返す', async () => {
+		test('GET /proxy/:url* preview で jxl を返す', async () => {
 			const res = await fastify.inject({
 				method: 'GET',
 				url: `/proxy/any?url=${encodeURIComponent(remotePngUrl)}&preview=1`,
@@ -720,7 +760,7 @@ describe('FileServerService', () => {
 			expect(res.headers['content-disposition'] ?? '').toContain('dummy.jxl');
 		});
 
-		test('GET /proxy/:url* svg を JXL に変換する', async () => {
+		test('GET /proxy/:url* svg を jxl に変換する', async () => {
 			const res = await fastify.inject({
 				method: 'GET',
 				url: `/proxy/any?url=${encodeURIComponent(remoteSvgUrl)}`,
