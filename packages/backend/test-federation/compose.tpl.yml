@@ -19,6 +19,10 @@ services:
       - NODE_ENV=production
     volumes:
       - type: bind
+        source: ../../../scripts/build-sharp.mjs
+        target: /misskey/scripts/build-sharp.mjs
+        read_only: true
+      - type: bind
         source: ../../../built
         target: /misskey/built
         read_only: false
@@ -104,7 +108,7 @@ services:
         read_only: true
     working_dir: /misskey
     command: >
-      bash -c "
+      bash -ec "
         npm install -g pnpm
         pnpm -F backend migrate
         pnpm -F backend start
