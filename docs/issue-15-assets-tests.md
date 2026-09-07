@@ -49,3 +49,27 @@ pnpm exec vitest --config vitest.config.unit.ts --run test/unit/FileInfoService.
 ```
 
 `.config/test.yml` は既存 CI テンプレートからコピーしている。最終 Vitest 実行は 44 passed / 1 file passed、4.45秒。生成・ビルドで追跡対象のコード生成差分はなく、JXL 2枚だけを専用生成物コミットへ保存した。
+
+## 全体 lint・実アプリでの確認（2026-09-07）
+
+`pnpm lint` を JXL 対応コンテナで実行した。最初の実行は15 workspace中13成功、frontend と frontend-builder が失敗。frontend は未ビルドの内部 `misskey-bubble-game` を参照していたため同 package をビルドし、frontend の `vue-tsc --noEmit` と ESLint を再実行して成功した。frontend-builder の失敗は `@oxc-project/types` 0.139.0 / 0.127.0 の二重バージョンによる既知の upstream 型不一致で、AGENTS.md の明示された例外に一致する。frontend-builder の ESLint は別途実行して成功した。backend は本節の MIME 修正後にも3種の型検査と ESLint を再実行して成功。全体 lint の `&&` 後段で未実行だった `node scripts/check-dts.mjs` は別途実行して18ファイル成功した。型例外を除く workspace の検証が成功したことと、全体コマンド自体の終了コードが1だったことを区別する。
+
+### 実画面と静的配信 MIME の修正
+
+最終 runtime イメージ `misskey-issue15:verify` を専用 Postgres / Redis とともに `http://127.0.0.1:61815` へ起動した。既存DBは共有せず、検証用管理者アカウントを作成し、単一ユーザー・連合無効のローカル環境で確認した。静的HTMLの代替ページではなく実アプリの「More → About → Start Tutorial」を操作した。
+
+初回HTTP検証では2枚とも200だが Content-Type が `application/octet-stream` だった。`@fastify/static` の既定 MIME データベースが `.jxl` を認識しないため、`ClientServerService` の `/client-assets/` 登録へ `setHeaders` を追加し、JXL のみ `image/jxl` にする。別形式のヘッダーは変更しない。修正済み backend をビルドし、同じ runtime イメージへ backend build 出力を読み取り専用マウントして実応答を再検証した。
+
+| 実リクエスト | HTTP | Content-Type | bytes |
+| --- | --- | --- | --- |
+| `/client-assets/tutorial/ai.jxl` | 200 | `image/jxl` | 77993 |
+| `/client-assets/tutorial/natto_failed.jxl` | 200 | `image/jxl` | 11210 |
+| `/client-assets/tutorial/timeline_tab.png` | 200 | `image/png` | 2860 |
+
+ブラウザは agent-browser 0.35.1 / HeadlessChrome 152.0.0.0 を利用した。このブラウザでは JXL が既定無効で、正しい `image/jxl` Blob にしても画像デコードに失敗した。Chromium の [JXL 実装・feature flag](https://chromium.googlesource.com/chromium/src/tools/+/bdbf9c9cab1e1e14f37692c207165af1942ce422)を確認し、`--args '--enable-features=JXLImageFormat'` 付きで再起動した。以降は2枚ともブラウザで実デコードに成功した。JXL対応ブラウザでの検証であり、既定でJXL非対応のブラウザへ表示保証を拡張しない。これはユーザーが確定したJXL追加方針を変更する判断ではない。
+
+- Note 画面: ai.jxl を表示し、`naturalWidth=320` / `naturalHeight=320` を確認。スクリーンショットを目視確認。
+- PostNote 画面: サンプルノートの ai.jxl が320×320としてロード。画面表示とコンテンツ警告のサンプルを確認。
+- Sensitive 画面: 添付 natto_failed.jxl の256×256デコード、メニューから「Mark as sensitive」、センシティブアイコン、Continue の有効化、「Show preview」の隠された状態、「Click to show」操作後の画像表示を確認。実プレビューの画像を目視確認し、ブラウザ例外一覧は空だった。
+
+ローカル証跡は `/tmp/issue15-tutorial-note-jxl.png`、`/tmp/issue15-tutorial-postnote-jxl.png`、`/tmp/issue15-tutorial-sensitive-preview-visible.png`。MIME修正を含む最終Docker再ビルド・そのイメージでの再確認と、Opus / subagent の再レビューは統合側で継続する。

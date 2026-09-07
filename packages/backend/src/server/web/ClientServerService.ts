@@ -267,6 +267,10 @@ export class ClientServerService {
 			prefix: '/client-assets/',
 			maxAge: ms('7 days'),
 			decorateReply: false,
+			setHeaders: (reply, path) => {
+				// The static server's MIME database does not recognize JPEG XL yet.
+				if (path.endsWith('.jxl')) reply.header('Content-Type', 'image/jxl');
+			},
 		});
 
 		fastify.register(fastifyStatic, {
