@@ -144,12 +144,13 @@ export class VideoTranscodingService {
 					onProgress: opts.onProgress,
 				});
 				const vvcVariant = await this.collectVariant('vvc', opts.outDir, opts.durationSec, audioCodec);
-				if (vvcVariant != null) {
-					variants.push(vvcVariant);
-				}
+				if (vvcVariant == null) throw new Error('VVC transcode produced no usable output');
+				variants.push(vvcVariant);
 			} catch (err) {
 				// キャンセルは中断として伝播させる（best-effort 扱いにしない）
 				if (err instanceof TranscodeCancelledError) throw err;
+				// サイズ集計・アップロードに不完全な成果物を含めない。削除失敗時は処理全体を失敗させる。
+				await fs.promises.rm(Path.join(opts.outDir, 'vvc'), { recursive: true, force: true });
 				// VVC は best-effort。失敗しても AV1 の結果は活かす
 				this.logger.warn('VVC transcode failed; continuing with AV1 only', err as Error);
 			}
