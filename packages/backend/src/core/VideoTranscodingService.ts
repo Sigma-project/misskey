@@ -227,7 +227,10 @@ export class VideoTranscodingService {
 		];
 
 		const phase = opts.codec === 'av1' ? 'encoding-av1' as const : 'encoding-vvc' as const;
-		const timeoutMs = Math.min(TIMEOUT_MAX_MS, TIMEOUT_BASE_MS + opts.durationSec * 1000 * TIMEOUT_FACTOR);
+		// duration 不明でも短い動画とは限らないため、既存の絶対上限を使う。
+		const timeoutMs = Number.isFinite(opts.durationSec) && opts.durationSec > 0
+			? Math.min(TIMEOUT_MAX_MS, TIMEOUT_BASE_MS + opts.durationSec * 1000 * TIMEOUT_FACTOR)
+			: TIMEOUT_MAX_MS;
 
 		await new Promise<void>((resolve, reject) => {
 			const command = FFmpeg(opts.inputPath)
