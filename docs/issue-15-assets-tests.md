@@ -73,3 +73,19 @@ pnpm exec vitest --config vitest.config.unit.ts --run test/unit/FileInfoService.
 - Sensitive 画面: 添付 natto_failed.jxl の256×256デコード、メニューから「Mark as sensitive」、センシティブアイコン、Continue の有効化、「Show preview」の隠された状態、「Click to show」操作後の画像表示を確認。実プレビューの画像を目視確認し、ブラウザ例外一覧は空だった。
 
 ローカル証跡は `/tmp/issue15-tutorial-note-jxl.png`、`/tmp/issue15-tutorial-postnote-jxl.png`、`/tmp/issue15-tutorial-sensitive-preview-visible.png`。MIME修正を含む最終Docker再ビルド・そのイメージでの再確認と、Opus / subagent の再レビューは統合側で継続する。
+
+## 既存アップロード E2E と最終 runtime の画像パイプライン（2026-09-07）
+
+既存 `test/e2e/endpoints.ts` の `drive/files/create` グループを `vitest --config vitest.config.e2e.ts --run test/e2e/endpoints.ts -t drive/files/create` で実行し、15件すべて成功した（同ファイルの残り79件は指定フィルタによる除外）。所要17.43秒。透過あり・なし WebP / AVIF / JXL のアップロード、ノート作成、ActivityPub 添付の `mediaType === image/jxl` を検証する既存6ケースを含む。独立した compose project `issue15-e2e` の Postgres / Redis を使用し、既存テストDB・#18のDB・browser用DBには触れていない。内部のアプリportは61816、ホストポート公開なし。初回は `--ignore-scripts` で導入したホスト依存の re2 バイナリが欠落して起動に失敗し、re2 の既存 install スクリプトで配布バイナリを配置後に再実行して成功した。テストやアプリコードをこの環境調整のために変更していない。
+
+MIME修正を含む最終イメージ `misskey-issue15:verify`（`sha256:bd36d2374308b716388130a1ef01b28e09e73cf8df2b21d358611cfbdd8d16c0`）で browser 用アプリを再作成し、再確認した。`docker inspect` で mount は `/misskey/.config/default.yml` のみで、backendビルドやnode_modulesのホストマウントがないことを確認した。
+
+最終アプリへ WebP / JXL / JPEG の実fixtureを multipart アップロードし、ノートAPIから公開添付URLを取得した。webpublic、thumbnailUrl、`/proxy/static.jxl?url=...&static=1` の全応答について HTTP200、`Content-Type: image/jxl`、sharp metadataのformat=jxl、rawデコードと正の寸法を検証して成功した。ブラウザ環境は連合無効なのでActivityPub GETは設定通り403となり、ここではノートAPI公開添付URLを使用した。ActivityPubのmediaTypeは前段の既存E2Eで検証済み。
+
+| アップロード入力 | upload | webpublic | thumbnail | media proxy |
+| --- | --- | --- | --- | --- |
+| `with-alpha.webp` | 200 | 200 / JXL / 256×256 | 200 / JXL / 256×256 | 200 / JXL / 256×256 |
+| `with-alpha.jxl` | 200 | 200 / JXL / 256×256 | 200 / JXL / 256×256 | 200 / JXL / 256×256 |
+| `192.jpg` | 200 | 200 / JXL / 192×192 | 200 / JXL / 192×192 | 200 / JXL / 192×192 |
+
+最終イメージからの tutorial2枚もHTTP200/image-jxlと実デコードに成功。JXLImageFormat有効のChromium152でアプリ画面のロードを再確認し、ai=320×320 / natto_failed=256×256のブラウザデコードを再確認した。ログは `/tmp/issue15-upload-e2e.log`、`/tmp/issue15-runtime-pipeline.log`。本節で前節の「最終Docker再ビルド・そのイメージでの再確認」の残作業は完了した。
