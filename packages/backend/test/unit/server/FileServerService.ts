@@ -329,6 +329,7 @@ describe('FileServerService', () => {
 
 			expect(res.statusCode).toBe(404);
 			expect(res.headers['cache-control']).toBe('public, max-age=0');
+			expect(res.rawPayload).toEqual(fs.readFileSync(path.resolve('src/server/assets/dummy.png')));
 		});
 
 		test('GET /files/:key 画像配信ヘッダを検証する', async () => {
