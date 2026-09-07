@@ -296,3 +296,9 @@ mise exec -- ../../node_modules/.bin/eslint --quiet test/unit/RemoteFileReferenc
 Opus 5は保存セッション `4e3a4bea-aa1b-4b95-a773-9c8f7b8e4aac` で3回レビューし、第3回で第1/2回の指摘をすべて修正済みまたは根拠により撤回として収束を明示した。独立subagentも全差分、tuple/indexの追加修正、最後のunit fixture前処理まで再確認し、必須指摘なしと回答した。unitの両清掃fixtureに中断後の関数清掃があることも確認済み。レビューの回数を理由に指摘を残していない。
 
 migration5本の整理案やcursorの明示castなどは不具合根拠のない任意提案として現状を維持する。各機能の修正・検証履歴をコミット単位で残す。PR/CIと最新masterの統合後確認を引き続き実施する。
+
+### 最新masterの統合
+
+#15のPR #20が全39 CI成功後にmasterへマージされたため、そのcommit `7f52e05f34a38c3350ac0e702092590e16369843` を統合する。競合は計画Docsのadd/addとCHANGELOGの追記のみで、各issueの最新計画・判断・検証履歴と両changelog行を保持した。製品コードの競合・手動改変はない。統合後の画像判定/清掃processorテストと型検査を行う。
+
+統合後のFileInfo44件＋清掃processor51件、計95件が同一JXL環境で成功した（`/tmp/issue18-integrated-tests.log`）。backendの全型検査とESLintもexit0（`/tmp/issue18-integrated-lint.log`）。Opusの保存セッションでの追加統合確認と独立subagentの確認はいずれも新たな必須指摘なし、収束維持。以降のPR/CI・マージ結果は[GitHub issue #18](https://github.com/Sigma-project/misskey/issues/18)に紐づくPRで確認できる。

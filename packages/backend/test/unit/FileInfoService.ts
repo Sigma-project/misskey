@@ -7,14 +7,17 @@ process.env.NODE_ENV = 'test';
 
 import * as assert from 'assert';
 import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import sharp from 'sharp';
 import { Test } from '@nestjs/testing';
-import { afterAll, beforeAll, describe, test } from 'vitest';
-import { mockDeep } from 'vitest-mock-extended';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
+import { mockDeep, mockReset } from 'vitest-mock-extended';
 import { GlobalModule } from '@/GlobalModule.js';
 import { FileInfo, FileInfoService } from '@/core/FileInfoService.js';
 //import { DI } from '@/di-symbols.js';
-import { AiService } from '@/core/AiService.js';
+import { AiService, type Prediction } from '@/core/AiService.js';
 import { LoggerService } from '@/core/LoggerService.js';
 import type { TestingModule } from '@nestjs/testing';
 
@@ -33,7 +36,7 @@ describe('FileInfoService', () => {
 		delete fi.porn;
 
 		return fi;
-	}
+	};
 
 	beforeAll(async () => {
 		app = await Test.createTestingModule({
@@ -308,5 +311,103 @@ describe('FileInfoService', () => {
 				},
 			});
 		});
+	});
+});
+
+describe('FileInfoService sensitive image detection', () => {
+	const aiService = mockDeep<AiService>();
+	const loggerService = mockDeep<LoggerService>();
+	let service: FileInfoService;
+
+	beforeEach(() => {
+		mockReset(aiService);
+		service = new FileInfoService(aiService, loggerService);
+		aiService.detectSensitive.mockResolvedValue([{ className: 'Neutral', probability: 1 }]);
+	});
+
+	test.each([
+		['192.jpg', 'image/jpeg'],
+		['with-alpha.png', 'image/png'],
+		['without-alpha.webp', 'image/webp'],
+		['with-alpha.webp', 'image/webp'],
+		['without-alpha.jxl', 'image/jxl'],
+		['with-alpha.jxl', 'image/jxl'],
+	])('%s reaches the detector as an opaque 299×299 PNG', async (filename, mime) => {
+		aiService.detectSensitive.mockResolvedValue([{ className: 'Porn', probability: 0.9 }]);
+		const info = await service.getFileInfo(`${resources}/${filename}`, { skipSensitiveDetection: false });
+
+		expect(info.type.mime).toBe(mime);
+		expect(info.warnings).toEqual([]);
+		expect(info.sensitive).toBe(true);
+		expect(info.porn).toBe(true);
+		expect(aiService.detectSensitive).toHaveBeenCalledTimes(1);
+		const png = aiService.detectSensitive.mock.calls[0][0];
+		expect(Buffer.isBuffer(png)).toBe(true);
+		expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+		expect(await sharp(png).metadata()).toMatchObject({
+			format: 'png', width: 299, height: 299, channels: 3, hasAlpha: false,
+		});
+		const decoded = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+		expect(decoded.data.length).toBe(299 * 299 * 3);
+		expect(aiService.detectSensitiveMany).not.toHaveBeenCalled();
+	});
+
+	describe.each(['with-alpha.webp', 'with-alpha.jxl'])('%s prediction thresholds', filename => {
+		test.each(['Sexy', 'Hentai', 'Porn'] as const)('%s uses a strict sensitive threshold', async className => {
+			for (const [probability, sensitive] of [[0.39, false], [0.4, false], [0.41, true]] as const) {
+				aiService.detectSensitive.mockResolvedValue([{ className, probability }]);
+				const info = await service.getFileInfo(`${resources}/${filename}`, {
+					skipSensitiveDetection: false, sensitiveThreshold: 0.4, sensitiveThresholdForPorn: 0.8,
+				});
+				expect(info.sensitive).toBe(sensitive);
+				expect(info.porn).toBe(false);
+				expect(info.warnings).toEqual([]);
+			}
+		});
+
+		test.each(['Sexy', 'Hentai', 'Porn'] as const)('%s only sets porn above the Porn threshold', async className => {
+			for (const probability of [0.79, 0.8, 0.81]) {
+				aiService.detectSensitive.mockResolvedValue([{ className, probability }]);
+				const info = await service.getFileInfo(`${resources}/${filename}`, {
+					skipSensitiveDetection: false, sensitiveThreshold: 0.4, sensitiveThresholdForPorn: 0.8,
+				});
+				expect(info.sensitive).toBe(true);
+				expect(info.porn).toBe(className === 'Porn' && probability > 0.8);
+				expect(info.warnings).toEqual([]);
+			}
+		});
+
+		test.each(([null, [], [{ className: 'Neutral', probability: 1 }], [{ className: 'Drawing', probability: 1 }]] satisfies (Prediction[] | null)[]).map(prediction => ({ prediction })))('does not mark a neutral or unavailable prediction ($prediction)', async ({ prediction }) => {
+			aiService.detectSensitive.mockResolvedValue(prediction);
+			const info = await service.getFileInfo(`${resources}/${filename}`, { skipSensitiveDetection: false });
+			expect(info.sensitive).toBe(false);
+			expect(info.porn).toBe(false);
+			expect(aiService.detectSensitive).toHaveBeenCalledTimes(1);
+		});
+
+		test('skipSensitiveDetection bypasses the detector', async () => {
+			const info = await service.getFileInfo(`${resources}/${filename}`, { skipSensitiveDetection: true });
+			expect(info.sensitive).toBe(false);
+			expect(info.porn).toBe(false);
+			expect(aiService.detectSensitive).not.toHaveBeenCalled();
+			expect(aiService.detectSensitiveMany).not.toHaveBeenCalled();
+		});
+	});
+
+	test('a decoding failure is reported without sending an invalid image to the detector', async () => {
+		const directory = await mkdtemp(join(tmpdir(), 'misskey-sensitive-image-'));
+		try {
+			const path = join(directory, 'truncated.png');
+			// Keep the PNG header and dimensions; remove the image data so actual decoding fails.
+			await writeFile(path, (await readFile(`${resources}/with-alpha.png`)).subarray(0, 64));
+			const info = await service.getFileInfo(path, { skipSensitiveDetection: false });
+			expect(info.type.mime).toBe('image/png');
+			expect(info.warnings).toEqual(expect.arrayContaining([expect.stringMatching(/^detectSensitivity failed:/)]));
+			expect(info.sensitive).toBe(false);
+			expect(info.porn).toBe(false);
+			expect(aiService.detectSensitive).not.toHaveBeenCalled();
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
 	});
 });
