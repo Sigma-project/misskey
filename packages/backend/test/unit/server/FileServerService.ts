@@ -227,9 +227,6 @@ describe('FileServerService', () => {
 		await externalFastify.close();
 		await remoteServer.close();
 		await db.destroy();
-		if (createdFallbackAssets) {
-			fs.rmSync(fallbackAssetsDir, { recursive: true, force: true });
-		}
 	});
 
 	describe('GET /transcoded/:prefix/*', () => {
