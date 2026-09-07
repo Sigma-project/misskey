@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 
+import { RemoteFileReferenceGuard1788783564794 } from '../../../migration/1788783564794-RemoteFileReferenceGuard.js';
 import { entities } from 'misskey-js';
 import {
 	beforeEach,
@@ -14,6 +15,7 @@ import {
 } from 'vitest';
 import {
 	api,
+	initTestDb,
 	captureWebhook,
 	randomString,
 	role,
@@ -89,6 +91,13 @@ describe('[シナリオ] ユーザ通報', () => {
 
 	beforeAll(async () => {
 		queue = await startJobQueue();
+		// The second Nest app resets the test schema, so restore its DB guards.
+		const connection = await initTestDb(true);
+		try {
+			await connection.query('DROP FUNCTION IF EXISTS remote_file_cleanup_guard() CASCADE');
+			await connection.query('DROP FUNCTION IF EXISTS remote_file_cleanup_json_ids(jsonb)');
+			await new RemoteFileReferenceGuard1788783564794().up(connection);
+		} finally { await connection.destroy(); }
 		admin = await signup({ username: 'admin' });
 		alice = await signup({ username: 'alice' });
 		bob = await signup({ username: 'bob' });

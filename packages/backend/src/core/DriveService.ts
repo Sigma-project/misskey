@@ -19,6 +19,7 @@ import type { MiRemoteUser, MiUser } from '@/models/User.js';
 import { MiDriveFile } from '@/models/DriveFile.js';
 import { IdService } from '@/core/IdService.js';
 import { isDuplicateKeyValueError } from '@/misc/is-duplicate-key-value-error.js';
+import { findReusableDriveFile } from '@/misc/find-reusable-drive-file.js';
 import { FILE_TYPE_BROWSERSAFE } from '@/const.js';
 import { IdentifiableError } from '@/misc/identifiable-error.js';
 import { contentDisposition } from '@/misc/content-disposition.js';
@@ -503,7 +504,7 @@ export class DriveService {
 
 		if (user && !force) {
 		// Check if there is a file with the same hash
-			const matched = await this.driveFilesRepository.findOneBy({
+			const matched = await findReusableDriveFile(this.driveFilesRepository, {
 				md5: info.md5,
 				userId: user.id,
 			});
@@ -662,10 +663,12 @@ export class DriveService {
 				if (isDuplicateKeyValueError(err)) {
 					this.registerLogger.info(`already registered ${file.uri}`);
 
-					file = await this.driveFilesRepository.findOneBy({
+					const existingFile = await findReusableDriveFile(this.driveFilesRepository, {
 						uri: file.uri!,
 						userId: user ? user.id : IsNull(),
-					}) as MiDriveFile;
+					});
+					if (!existingFile) throw err;
+					file = existingFile;
 				} else {
 					this.registerLogger.error(err as Error);
 					throw err;
@@ -887,8 +890,9 @@ export class DriveService {
 	private async deletePostProcess(file: MiDriveFile, isExpired = false, deleter?: MiUser) {
 		// リモートファイル期限切れ削除後は直リンクにする
 		if (isExpired && file.userHost !== null && file.uri != null) {
-			await this.driveFilesRepository.update(file.id, {
+			const result = await this.driveFilesRepository.update({ id: file.id, isLink: false }, {
 				isLink: true,
+				isRemoteCacheExpired: true,
 				url: file.uri,
 				thumbnailUrl: null,
 				webpublicUrl: null,
@@ -898,17 +902,30 @@ export class DriveService {
 				thumbnailAccessKey: 'thumbnail-' + randomUUID(),
 				webpublicAccessKey: 'webpublic-' + randomUUID(),
 			});
+			// Only the successful transition accounts from the old cached state.
+			if (result.affected !== 1) return;
 		} else {
 			await this.driveFilesRepository.delete(file.id);
 		}
 
-		this.driveChart.update(file, false);
-		if (file.userHost == null) {
-			// ローカルユーザーのみ
-			this.perUserDriveChart.update(file, false);
-		} else {
-			if (this.meta.enableChartsForFederatedInstances) {
-				this.instanceChart.updateDrive(file, false);
+		await this.notifyFileDeleted(file, deleter);
+	}
+
+	@bindThis
+	public async notifyFileDeleted(file: MiDriveFile, deleter?: MiUser) {
+		// Expiry already accounts for cached files, including empty files. Legacy
+		// positive-size links predate the marker; pure links are created with size 0.
+		const alreadyUncounted = file.userHost !== null
+			&& (file.isRemoteCacheExpired || (file.isLink && file.size > 0));
+		if (!alreadyUncounted) {
+			this.driveChart.update(file, false);
+			if (file.userHost == null) {
+				// ローカルユーザーのみ
+				this.perUserDriveChart.update(file, false);
+			} else {
+				if (this.meta.enableChartsForFederatedInstances) {
+					this.instanceChart.updateDrive(file, false);
+				}
 			}
 		}
 
@@ -924,6 +941,25 @@ export class DriveService {
 				fileUserUsername: user?.username ?? null,
 				fileUserHost: user?.host ?? null,
 			});
+		}
+	}
+
+	/** Storage-only deletion for the durable remote-note cleanup worker. */
+	@bindThis
+	public async deleteFileStorage(file: MiDriveFile) {
+		const keys = [file.accessKey, file.thumbnailAccessKey, file.webpublicAccessKey]
+			.filter((key): key is string => key != null);
+		if (file.storedInternal) {
+			for (const key of keys) await this.internalStorageService.delAsync(key);
+		} else if (!file.isLink) {
+			for (const key of keys) await this.deleteObjectStorageFile(key);
+		}
+		if (file.transcodingPrefix != null) {
+			if (file.transcodingStoredInternal) {
+				await this.internalStorageService.delPrefixAsync(file.transcodingPrefix);
+			} else {
+				await this.s3Service.deletePrefix(this.meta, `${file.transcodingPrefix}/`);
+			}
 		}
 	}
 

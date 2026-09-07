@@ -3,7 +3,7 @@
 - 対象: https://github.com/Sigma-project/misskey/issues/15
 - 調査日: 2026-09-07
 - 基準: `origin/master` = `2b006ee066e6360957a0c37c42569a23273c35ff`。作業ツリーは古いので、最新ファイルは `git show origin/master:<path>` で確認した。
-- 現在の状態: 2026-09-07の明示的な実装許可に基づき実装済み。Opus 5 / 独立subagentのコードレビューは収束。PR [#20](https://github.com/Sigma-project/misskey/pull/20) で最終検証・CIを進めている。以降の調査・計画節は実装前の履歴であり、実行結果は [Docker実装記録](issue-15-docker.md) / [画像・テスト実装記録](issue-15-assets-tests.md) を参照。
+- 現在の状態: 2026-09-07の明示的な実装許可に基づき実装済み。Opus 5 / 独立subagentのコードレビューは収束。PR [#20](https://github.com/Sigma-project/misskey/pull/20) は最新コミットの全39 CI成功を確認しマージ済み。以降の調査・計画節は実装前の履歴であり、実行結果は [Docker実装記録](issue-15-docker.md) / [画像・テスト実装記録](issue-15-assets-tests.md) を参照。
 - 共通手順: [issue 計画一覧](issue-plans.md)。画像形式と実行方式のユーザー判断は後述。
 
 ## 要件・制約

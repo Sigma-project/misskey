@@ -10,6 +10,7 @@ import { MiDriveFile } from './DriveFile.js';
 
 @Entity('page')
 @Index(['userId', 'name'], { unique: true })
+@Index('IDX_PAGE_REMOTE_FILE_REFERENCES', { synchronize: false })
 export class MiPage {
 	@PrimaryColumn(id())
 	public id: string;

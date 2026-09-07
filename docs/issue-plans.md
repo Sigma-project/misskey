@@ -6,8 +6,8 @@
 
 | Issue | 計画 | 状態 |
 | --- | --- | --- |
-| [#15 JXL 移行の regression](https://github.com/Sigma-project/misskey/issues/15) | [計画](issue-15-plan.md) | 実装済み・レビュー収束・[PR #20](https://github.com/Sigma-project/misskey/pull/20) 検証中 |
-| [#18 既存の90日DBクリーンアップに添付ファイル削除を追加](https://github.com/Sigma-project/misskey/issues/18) | [計画](issue-18-plan.md) | 明示許可後の実装・検証・再レビュー中 |
+| [#15 JXL 移行の regression](https://github.com/Sigma-project/misskey/issues/15) | [計画](issue-15-plan.md) | [PR #20](https://github.com/Sigma-project/misskey/pull/20) マージ済み・全39 CI成功 |
+| [#18 既存の90日DBクリーンアップに添付ファイル削除を追加](https://github.com/Sigma-project/misskey/issues/18) | [計画](issue-18-plan.md) | 実装・統合検証・正式レビュー完了。PR/CI状況はissue内のPRを参照 |
 
 ## 計画作成時の基準と作業範囲
 

@@ -18,6 +18,10 @@ import {
 	MiMeta,
 } from '@/models/_.js';
 import { CleanRemoteNotesProcessorService } from '@/queue/processors/CleanRemoteNotesProcessorService.js';
+import { DataSource } from 'typeorm';
+import { MiRemoteFileCleanup } from '@/models/RemoteFileCleanup.js';
+import { MiDriveFile } from '@/models/DriveFile.js';
+import { RemoteFileReferenceGuard1788783564794 } from '../../../../migration/1788783564794-RemoteFileReferenceGuard.js';
 import { DI } from '@/di-symbols.js';
 import { IdService } from '@/core/IdService.js';
 import { QueueLoggerService } from '@/queue/QueueLoggerService.js';
@@ -110,6 +114,10 @@ describe('CleanRemoteNotesProcessorService', () => {
 			.overrideProvider(DI.meta).useFactory({ factory: () => meta })
 			.compile();
 
+		// Test schema reset drops tables but functions can survive an interrupted run.
+		await app.get<DataSource>(DI.db).query('DROP FUNCTION IF EXISTS remote_file_cleanup_guard() CASCADE');
+		await app.get<DataSource>(DI.db).query('DROP FUNCTION IF EXISTS remote_file_cleanup_json_ids(jsonb)');
+		await new RemoteFileReferenceGuard1788783564794().up(app.get<DataSource>(DI.db));
 		service = app.get(CleanRemoteNotesProcessorService);
 		idService = app.get(IdService);
 		notesRepository = app.get(DI.notesRepository);
@@ -147,8 +155,109 @@ describe('CleanRemoteNotesProcessorService', () => {
 	}, 60 * 1000);
 
 	afterAll(async () => {
+		await new RemoteFileReferenceGuard1788783564794().down(app.get<DataSource>(DI.db));
 		await app.close();
 	});
+
+	test('records only deleted attachments atomically and preserves shared files', async () => {
+		const db = app.get<DataSource>(DI.db);
+		const id = idService.gen();
+		await db.getRepository(MiDriveFile).insert({ id, userHost: bob.host, md5: id, name: 'shared', type: 'image/jpeg', size: 1, storedInternal: false, isLink: true, url: 'https://remote/file' });
+		const expired = await createNote({ fileIds: [id] }, bob, Date.now() - ms('100d'));
+		const retained = await createNote({ fileIds: [id] }, carol);
+		await service.process(createMockJob() as any);
+		expect(await notesRepository.findOneBy({ id: expired.id })).toBeNull();
+		expect(await notesRepository.findOneBy({ id: retained.id })).not.toBeNull();
+		expect(await db.getRepository(MiRemoteFileCleanup).findOneBy({ fileId: id })).toMatchObject({ state: 'pending' });
+		await db.getRepository(MiRemoteFileCleanup).delete(id);
+		await notesRepository.delete(retained.id);
+		await db.getRepository(MiDriveFile).delete(id);
+	});
+
+	test('candidate failure rolls back the note deletion', async () => {
+		const db = app.get<DataSource>(DI.db);
+		const fileId = idService.gen();
+		await db.getRepository(MiDriveFile).insert({ id: fileId, userHost: bob.host, md5: fileId, name: 'rollback', type: 'image/jpeg', size: 1, storedInternal: false, isLink: true, url: 'https://remote/file' });
+		const note = await createNote({ fileIds: [fileId] }, bob, Date.now() - ms('100d'));
+		await db.query(`CREATE FUNCTION test_reject_cleanup_candidate() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'candidate write failed'; END $$`);
+		await db.query(`CREATE TRIGGER test_reject_cleanup_candidate BEFORE INSERT ON remote_file_cleanup FOR EACH ROW EXECUTE FUNCTION test_reject_cleanup_candidate()`);
+		try {
+			await expect(service.process(createMockJob() as any)).rejects.toThrow('candidate write failed');
+			expect(await notesRepository.findOneBy({ id: note.id })).not.toBeNull();
+			expect(await db.getRepository(MiRemoteFileCleanup).findOneBy({ fileId })).toBeNull();
+		} finally {
+			await db.query('DROP TRIGGER test_reject_cleanup_candidate ON remote_file_cleanup');
+			await db.query('DROP FUNCTION test_reject_cleanup_candidate()');
+			await notesRepository.delete(note.id);
+			await db.getRepository(MiDriveFile).delete(fileId);
+		}
+	});
+
+	test('deletes more than 65535 descendants with one array parameter and preserves a protected tree', async () => {
+		const db = app.get<DataSource>(DI.db);
+		const expiredAt = Date.now() - ms('100d');
+		const root = await createNote({}, bob, expiredAt);
+		const protectedRoot = await createNote({}, bob, expiredAt);
+		const localReply = await createNote({ replyId: protectedRoot.id }, alice, expiredAt);
+		const childIds = Array.from({ length: 65536 }, () => idService.gen(expiredAt + 1));
+		await db.query(`INSERT INTO note (id, "userId", "userHost", visibility, "replyId", "replyUserId", "replyUserHost")
+			SELECT id, $2, $3, 'public', $4, $2, $3 FROM unnest($1::varchar[]) AS id`, [childIds, bob.id, bob.host, root.id]);
+		// This boundary fixture measures bind count, not the test DB's short SQL budget.
+		const transaction = db.transaction.bind(db);
+		const transactionSpy = vi.spyOn(db, 'transaction').mockImplementation(async (callback: any) => transaction(async manager => {
+			await manager.query("SET LOCAL statement_timeout = '120s'");
+			return callback(manager);
+		}));
+		let result;
+		try {
+			result = await service.process(createMockJob() as any);
+		} finally {
+			transactionSpy.mockRestore();
+		}
+		expect(result.deletedCount).toBe(childIds.length + 1);
+		expect(await notesRepository.findOneBy({ id: root.id })).toBeNull();
+		const [{ count }] = await db.query('SELECT count(*)::int AS count FROM note WHERE id = ANY($1::varchar[])', [childIds]);
+		expect(count).toBe(0);
+		expect(await notesRepository.findOneBy({ id: protectedRoot.id })).not.toBeNull();
+		expect(await notesRepository.findOneBy({ id: localReply.id })).not.toBeNull();
+	}, 120 * 1000);
+
+	for (const rejectLaterBatch of [false, true]) {
+		test(`large attachment result ${rejectLaterBatch ? 'rolls back all batches after a later failure' : 'crosses the PostgreSQL parameter boundary'}`, async () => {
+			const db = app.get<DataSource>(DI.db);
+			const fileIds = Array.from({ length: 65536 }, () => idService.gen());
+			// One array parameter keeps fixture creation independent of INSERT batching.
+			await db.query(`INSERT INTO drive_file (id, "userHost", md5, name, type, size, url, "isLink", "storedInternal")
+				SELECT id, 'remote.example', id, 'boundary', 'image/jpeg', 1, 'https://remote/file', true, false FROM unnest($1::varchar[]) AS id`, [fileIds]);
+			const note = await createNote({ fileIds }, bob, Date.now() - ms('100d'));
+			if (rejectLaterBatch) {
+				// Fail only once a prior INSERT has succeeded, regardless of batch size.
+				await db.query(`CREATE FUNCTION test_reject_later_cleanup_batch() RETURNS trigger LANGUAGE plpgsql AS $$
+					BEGIN IF EXISTS (SELECT 1 FROM remote_file_cleanup WHERE "fileId" = '${fileIds[0]}') THEN
+						RAISE EXCEPTION 'later candidate batch failed'; END IF; RETURN NULL; END $$`);
+				await db.query('CREATE TRIGGER test_reject_later_cleanup_batch BEFORE INSERT ON remote_file_cleanup FOR EACH STATEMENT EXECUTE FUNCTION test_reject_later_cleanup_batch()');
+			}
+			try {
+				if (rejectLaterBatch) {
+					await expect(service.process(createMockJob() as any)).rejects.toThrow('later candidate batch failed');
+					expect(await notesRepository.findOneBy({ id: note.id })).not.toBeNull();
+				} else {
+					await service.process(createMockJob() as any);
+					expect(await notesRepository.findOneBy({ id: note.id })).toBeNull();
+				}
+				const [{ count }] = await db.query('SELECT count(*)::int AS count FROM remote_file_cleanup WHERE "fileId" = ANY($1::varchar[])', [fileIds]);
+				expect(count).toBe(rejectLaterBatch ? 0 : fileIds.length);
+			} finally {
+				if (rejectLaterBatch) {
+					await db.query('DROP TRIGGER test_reject_later_cleanup_batch ON remote_file_cleanup');
+					await db.query('DROP FUNCTION test_reject_later_cleanup_batch()');
+				}
+				await notesRepository.delete(note.id);
+				await db.query('DELETE FROM remote_file_cleanup WHERE "fileId" = ANY($1::varchar[])', [fileIds]);
+				await db.query('DELETE FROM drive_file WHERE id = ANY($1::varchar[])', [fileIds]);
+			}
+		}, 60 * 1000);
+	}
 
 	describe('basic', () => {
 		test('should skip cleaning when enableRemoteNotesCleaning is false', async () => {

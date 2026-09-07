@@ -3,7 +3,7 @@
 - 対象: [Sigma-project/misskey #18](https://github.com/Sigma-project/misskey/issues/18)
 - 作成日: 2026-09-07
 - 計画基準: `origin/master` `2b006ee066e6360957a0c37c42569a23273c35ff`。作業ツリーの旧 HEAD からの関連差分も確認した。
-- 状態: Codex と Fable 5.1 の独立設計・5往復の差異議論を完了。ユーザーによる対象変更を反映した計画案。実装は未許可。コード変更・migration 実行・データ削除は行っていない。
+- 状態（2026-09-07更新）: ユーザーの明示許可を得て実装済み。Opus5の第1回指摘を検証・修正し、unit全体とmigration往復を検証済み。API e2e全体と第2回レビューを実行中。下記の計画時点の記述は当時の検討履歴であり、現在の実装・許可状態は「実装許可の記録」以降を参照する。
 - [計画一覧](issue-plans.md)
 
 ## 要件・制約
@@ -127,7 +127,7 @@ mise exec -- pnpm --filter backend check-migrations
 
 backend テストと migration 検査の前に `compose.test.yml` の DB/Redis と `.config/test.yml` を準備し、新規 migration をテスト DB へ適用する。API を変えた場合は `mise exec -- pnpm build-misskey-js-with-types` を実行する。実装時の追加テストファイル名に応じて絞り込みを更新する。JXL/libvips の fork 前提と既知 lint 例外は最新 `AGENTS.md` に従い、今回起因の失敗と分ける。
 
-本ターンは計画文書だけのためテスト・ビルド・migration は未実行。`shipping-misskey-change` スキルを確認し、コード/API/entity/locale/画面の変更がないため対応する検証・生成・SPDX・CHANGELOG 更新は非該当。画像変換や CI の不変条件を変更していない。
+初回計画作成ターン時点（履歴）は計画文書だけのためテスト・ビルド・migration は未実行。`shipping-misskey-change` スキルを確認し、コード/API/entity/locale/画面の変更がないため対応する検証・生成・SPDX・CHANGELOG 更新は非該当。画像変換や CI の不変条件を変更していない。
 
 ## 未決事項・ユーザー判断
 
@@ -151,4 +151,241 @@ Claude の設計・議論の実行にタイムアウトを設けず、時間を�
 
 ## 実装許可
 
-実装許可は未取得。対象計画への合意だけでは実装を始めない。許可取得後、対象計画の版・許可日・許可範囲をここへ追記する。
+2026-09-07に明示的な実装許可を取得済み。対象計画の版・許可日・許可範囲は直下の「実装許可の記録」に記載する。計画段階では許可取得まで実装を待機した。
+
+## 実装許可の記録
+
+**ユーザー判断（2026-09-07）**: 「それぞれ、実装を開始して」と明示された。対象は本書の確定方針（計画コミット `838335d0c7` 時点）であり、issue #18 の実装・検証・修正を開始する。理由の提示なし。過去の「実装未許可」は計画段階の履歴で、この許可により更新する。
+
+
+## 実装記録（2026-09-07）
+
+以下はエージェントの実装判断であり、追加の「ユーザー判断」ではない。対象・期限・有効化状態・投稿保護条件を変更していない。
+
+- `CleanRemoteNotesProcessorService` の既存バッチDELETEに transaction を加え、`DELETE RETURNING fileIds` で実際に削除された投稿の候補だけを独立表へ記録する。候補書込み失敗時は投稿削除も rollback する。
+- `remote_file_cleanup` はfile IDの一意キー、pending/deleting、試行回数、次回時刻、最終エラー、Drive descriptorを保持する。FKを設けず、通常削除経路でDrive行が消えてもdeletingのstorageキーを失わない。pending欠損は候補完了、deleting欠損はdescriptorによる物理回収を完了する。
+- 参照追加ガードはDBのBEFORE INSERT/UPDATE triggerで実装した。全7表の保存transactionで、新規追加IDを順にDrive行FOR SHARE→新しいREAD COMMITTED snapshotでdeleting確認する。アプリ個別経路のtransaction改修より網羅性を維持しやすく、AP・Page・直接Repository経路にも同じ規約が適用される。GCはDrive行FOR UPDATE後の新しいsnapshotで共有参照を再確認する。既存IDを維持する更新は追加参照として扱わない。
+- Page content/variablesのfileId/fileIdsは入れ子も抽出し所有者不問で保護する。任意文字列URLは対象外。既存欠損IDを維持する更新を許容する一方、新規欠損IDは拒否する。完了後にDrive行と候補が消えた古いIDへの参照を拒否するために必要で、他の各APIは既に存在チェックを持つ。Pageの任意JSON保存だけはこの整合性検査が新たに適用される。
+- 再利用のmd5/URI lookupはdeletingを除外する。既存動画processorはリモート所有ファイルを生成対象外にするため、その境界を回帰検証した。画像生成は新規Drive行のinsert前に完了し、その未公開IDはGC候補にならない。
+- 回収workerは5分間隔の既存system queueで起動し、最大100候補・開始から60秒のバッチ予算を持つ。Claudeの実行待機タイムアウトとは無関係の運用上のworker負荷上限である。参照中は候補を保持し、2分から最大24時間へbackoffする。無効時はpendingの新規削除確定を止め、deletingだけを再開する。
+- 同じfile IDの二重workerをsession advisory lockで排除し、短いDB transactionの間にstorage I/Oを行う。内部保存はawait/ENOENTのみ許容、object storageはNoSuchKeyのみ許容。S3のHTTP成功内のDeleteObjects.Errorsも検査する。全key回収後にDrive削除と候補完了を同transactionでcommitし、その実行だけが既存chart/eventをbest-effortで試す。
+- Page JSONの再帰抽出が候補ごとの全走査になるため、抽出式に単一GIN indexを追加した。既存Note/NoteDraftのGINを再利用する。Page 1000件×100候補の独立schema計測は25,222ms→107ms。Note1万件のEXPLAINで既存GIN、新Pageの実SQL EXPLAINで追加GINの利用を確認。100候補に対するChat10万行411ms、Gallery1万行152ms、Channel1万行134msの計測では、これらへの追加indexは今回の負荷予算に不要と判断した。これらはローカル測定で本番性能保証ではない。
+- Page indexは通常作成と環境変数でのCONCURRENTLY作成をサポートし、失敗時のinvalid indexを再作成できる。migrationのdownはindex→trigger/function→候補表の順に巻き戻す。
+
+### 検証の記録
+
+- 独立worktree `/tmp/misskey-issue18`、独立compose project `misskey-issue18-test`（DB54318/Redis56318）で検証。共有の運用DBは使用しない。migration検証はunit testのdropSchema/synchronizeと干渉しない別DB `test-misskey-migration18` を使用する。
+- 清掃・回収48件、guard/再利用/remote動画21件、共有参照/索引/負荷15件、Drive storage9件のテスト成功。清掃fixtureは本番同様にguard migrationを明示up/downする（TypeORM synchronizeだけではSQL trigger/functionを作らないため）。
+- 内部ファイルの実unlink/prefix削除とENOENT/ディレクトリエラー、S3原本/派生物/prefix/ページング/部分Errors/NoSuchKey、候補書込みrollback、storage失敗とdescriptor再試行、worker重複、通知失敗、参照の保留と解消後回収、全7表参照追加競合を確認した。
+- backend lint/typecheck成功。全体lintはfrontend-builderの既知OXC型不整合、および初回frontend依存workspace未buildを検出したため、後者の依存をbuildして再検証中。API定義・locale・画面コードは変更していないためAPI生成・locale追加・画面確認は対象外。手書きmigration、entity、TS新規ファイルへSPDXを追加した。
+- backend/依存workspaceのbuild-pre/buildはgitignored成果物のみで、tracked生成差分はない。手書き変更は機能一体としてコミットする。
+- 新規migrationの専用DB適用・往復・pending DDL検証とOpus5/独立subagentレビューは進行中。完了後に結果を追記する。
+
+
+### 実装時の最終検証（2026-09-07）
+
+- 関連6ファイルをまとめて94テスト成功。その後、最終DB確定失敗の再試行・pending欠損の2件を追加し、GC10件を再実行して全成功。異なるテスト総数96件。ログ: `/tmp/issue18-final-tests.log`、`/tmp/issue18-gc-final-tests.log`。テスト型チェックも成功。
+- 新規3 migrationを専用DBで全適用後、index→guard→候補表の順にdownして再適用し、`check-migrations` が `All migrations are clean.`（pending DDL 0件）で成功。ログ: `/tmp/issue18-migrations-up.log`、`/tmp/issue18-migration-down-{1,2,3}.log`、`/tmp/issue18-migration-reapply.log`、`/tmp/issue18-migration-check.log`。Page indexのCONCURRENTLYモードも独立schemaの往復試験に成功。
+- 全体 `pnpm lint` は13 workspace成功、frontend-builderはAGENTS記載の既知OXC型不整合。frontendは未buildのmisskey-bubble-game依存に起因した失敗を解消し、依存build後にfrontend lint成功。追加実装後のbackend lint/typecheck、テスト型チェック、変更ファイルESLint、diff空白チェックも成功。ログ: `/tmp/issue18-lint-escalated.log`、`/tmp/issue18-frontend-lint.log`、`/tmp/issue18-backend-lint-final.log`。
+- ローカルglobal libvips未設置のため、この独立worktreeの依存インストール時だけ `SHARP_IGNORE_GLOBAL_LIBVIPS=1` とbuild-from-source環境変数解除を使用した。JXLエンコードを検証するものではなく、今回のDB/収納削除テストは全成功。リポジトリのJXLビルド設定・画像生成挙動は変更していない。初回実装検証時点ではbackend全unit suite・JXLの追加検証は未実行だった（その後、レビュー修正の広域検証でJXL対応環境の全unitを実行。後節参照）。
+- 実装差分・本書・検証結果をOpus5と独立subagentへ渡す準備が完了した。レビュー収束とPR/CI/マージは引き続き必要であり、実装コミットだけで完了扱いにしない。
+
+
+## Opus 5 第1回レビューへの検証・対応（参照ガード担当、2026-09-07）
+
+対象回答: `/tmp/issue18-opus-review1.json`（`result` 全文読了）。本節はエージェントによる評価・実装判断であり、ユーザー判断ではない。
+
+### P1-4: 全行JSON化と添付なし書込み負荷 — 妥当、修正済み
+
+旧ガードは `to_jsonb(NEW)` と再帰CTEを全対象INSERTで実行し、添付なしNoteでもtext・reactions等を走査していた。独立schemaで5000件、各text3600文字・reactions32項目・空fileIdsを一文INSERTして793msを計測した。
+
+修正後は対象列を直接読む。Note/Draft/GalleryはfileIds配列、UserはavatarId/bannerId、ChannelはbannerId、ChatはfileId、Pageだけcontent/variablesの既知IDを再帰抽出する。全行JSON化の補助関数は廃止した。INSERTには非空WHEN、UPDATEには非空と対象列のIS DISTINCT FROMを組み合わせたWHENを設定し、空参照や同じ値への更新ではトリガー関数そのものを呼ばない。既存missing参照を維持する更新の許容、ID順FOR SHARE、新snapshotのdeleting確認は維持する。nullableな旧参照配列はNULL要素を除去してからANY比較し、新規参照がSQL NULLで判定から抜けないようにした。
+
+同じ5000件の挿入は修正後64ms、再実行58ms。EXPLAIN ANALYZEでも添付なしINSERTと同じfileIdsのUPDATEにTriggersが無いことをassert。無関係なNote JSONを参照として扱わないテストを追加し、全7表の新規/更新/消滅/競合テストも通過した。時間値は最小テスト構成の測定であり、本番環境の保証ではない。
+
+### P1-1: Draft/Userの索引欠落という指摘 — 当該3経路は不採用、検証補完
+
+マイグレーション用DB（`.config/migration18.yml` 接続先）を読み取り、`pg_indexes`から以下の実在を確認した。
+
+- `note_draft`: `IDX_NOTE_DRAFT_FILE_IDS`、`USING gin ("fileIds")`。既存 `1736686850345-createNoteDraft.js` が作成。
+- `user`: `REL_58f5c71eaab331645112cf8cfa`、avatarIdのunique btree。
+- `user`: `REL_afc64b53f8db3707ceb34eb28e`、bannerIdのunique btree。
+
+Userの2索引は既存@OneToOne由来。通常のschema同期用test.yml DBにはsynchronize:falseのDraft GINは無く、これを本番migrationの欠落と混同しない。
+
+独立schemaに上記と同じ索引を設定し、実hasReferencesが発行したSQLをそのままEXPLAIN ANALYZEした。Draft1万件の命中/不一致とも既存GINを使用。User10万件のavatar命中/banner命中/不一致はいずれも2つの既存unique索引を使用した。100個の不一致候補に対する測定はDraft119ms、User96ms（投入時間除外）。不要な重複索引は追加しない。
+
+他の未索引経路も再測定: Chat10万件380ms、Gallery1万件159ms、Channel1万件127ms（各100候補、投入時間除外）。Pageは新索引利用で1000件98ms。これらはwarmな最小schemaの観測値であり、無制限の本番規模の性能保証ではない。現状の具体的な30秒timeoutの再現根拠はなく、候補数/運用観測は主担当の別指摘対応と合わせて評価する。
+
+### P2-8: ガードエラー識別 — 主担当のAPI修正へ対応済み
+
+missing/deletingの両RAISEに `CONSTRAINT = 'remote_file_cleanup_reference_guard'` を追加し、SQLSTATE23503は維持した。ガード拒否のテスト全てでcodeとconstraintの両方をassertした。通常のFKエラーとの識別とAPI側400への変換は主担当の担当範囲。
+
+### P2-9: IMMUTABLE抽出関数と式索引の依存 — 妥当、コメント追加済み
+
+`remote_file_cleanup_json_ids` の直前に、将来の抽出規則変更では同じmigration内で `IDX_PAGE_REMOTE_FILE_REFERENCES` を再構築し、回収処理再開より前に完了させる必要を明記した。PostgreSQLは関数の実装変更だけでは既存index値を無効化しない。今回の関数の抽出意味自体は変更していない。
+
+`down()`には、Page索引migrationを先に戻す必要があり、CASCADEで誤った順序を隠さないことを明記した。独立schemaテストはindex down→index up→index down→guard downの順で実行している。AGENTS.mdの共通規則へ追記するなら「remote_file_cleanup_json_idsの抽出規則変更時はPage式索引を同migrationで再構築し、rollbackは索引を先に戻す」を推奨（本担当の編集許可ファイル外なので未変更）。
+
+### 検証
+
+backend cwd:
+
+```sh
+mise exec -- ./node_modules/.bin/vitest run --config vitest.config.unit.ts RemoteFileReferenceGuard RemoteFileReferenceQueries --reporter verbose --disableConsoleIntercept
+mise exec -- ../../node_modules/.bin/eslint --quiet test/unit/RemoteFileReferenceGuard.ts test/unit/RemoteFileReferenceQueries.ts
+```
+
+36 tests passed、2 files passed、13.80s（2026-09-07 22:01:38 UTC開始）。ESLintとgit diff --checkは別途完了を確認。主担当の全体lint/migration/e2e/レビューと機能単位コミットに含める。
+
+
+### 第1回レビューの残項目への評価・対応（主担当）
+
+以下もエージェントの判断であり、ユーザー判断ではない。
+
+- **P1-2（派生物キー書込み）: 提案を不採用。** 現在の画像生成はDriveService.addFile/saveで新規Drive行insertより前に完了する。既存行へ新規storage成果物を書き戻す経路はVideoTranscodingProcessorServiceだけで、リモート所有ファイルは処理開始時にskipし回帰テストでも確認した。DriveService.updateは名前/フォルダ/説明/センシティブ等でstorage keyを更新しない。期限切れリンク化はNULL化ではなくrandomUUIDのproxy用キーへ更新するため、提案された非NULLキー変更禁止は既存の期限切れ処理を誤って拒否する。将来リモート向け派生生成を追加する際は状態規約への参加が必要だが、現存しない書込み経路を理由に禁止トリガーを追加しない。
+- **P1-3（linkに非NULLキーがあるならS3削除）: 前提が誤りのため不採用。** DriveService.addFileのlink作成も期限切れリンク化も、実体のないproxy解決用accessKey/thumbnailAccessKey/webpublicAccessKeyをrandomUUIDで設定する。純linkのキーはNULLという指摘は実コードと異なる。isLink条件を外すと、object storage未設定の通常linkを架空キーのS3削除に送って永続失敗させる。原本はstoredInternal/非linkの実保存情報に従い、独立したtranscodingPrefixはlink状態にかかわらず回収する。期限切れ化前にdeleting確定した場合は、descriptorに旧実キーが残る。過去の別削除経路で既に失われた未知のstorage keyを一般孤児として探すことは計画の範囲外。
+- **P1-5（同URI登録のunique衝突）: 前提が誤りのため不採用、再現検証を追加。** 初期migrationのdrive_file.uriは非uniqueのIDX_e5848eac4940934e23dbc17581で、現MiDriveFileも@Index()のみ。uri/userIdの複合uniqueは存在しない。削除中旧行を保持したまま、同URI・同ownerの新ID挿入とPageへの新規参照がHTTP e2eで成功した。DriveService.addFileの実再登録経路でも同bytes/URIの削除中行から別ID/別proxy keyで作成できる回帰検証を追加した。したがってDrive行の早期削除やURI切離しは必要なく、全物理回収後にDrive行を削除する確定計画を維持する。
+- **P2-6（最古候補の走査）: 改善。** createdAtに索引を追加して最古候補LIMIT 1を支える。候補件数countは正確な未回収件数の観測に必要なので維持する。候補表は本PRの新規表で、追加indexの通常作成は既存巨大表のlockを発生させない。
+- **P2-7（テスト並列衝突）: 不採用、根拠を確認。** vitest.config.tsはmaxWorkers:1でunit/e2e共通設定へ継承される。ファイルの実行は同時に1つで、各public schema fixtureのup/downは並列にならない。専用schemaのguard/queryテストは引き続き独立。DB自体も他issue/運用DBから分離した。e2e共通setupは本番のguardを明示設置し、独自にDBを再初期化するmove suiteでも再設置する。
+- **P2-8（APIの500）: 妥当、修正。** ガードに固有constraint名を付け、ApiCallServiceは当該23503だけを400 NO_SUCH_FILEへ変換する。既存FK違反全般をmissing扱いにしない。Page JSONの新規missing/deletingをHTTPで検証し、通常FKはINTERNAL_ERRORのままであることも確認する。meta/paramDef/resやendpoint登録は変更していないためSDK生成対象の差分はない。API reviewer指示書の対象はendpoints配下と定義されており、本件にはその変更がない。
+- **P2-10（transcoding削除重複）: 現在の不具合ではないため不採用。** 既存cleanupTranscodingArtifactsと厳密版は、同じ保存済みprefixを内部ではdirectory、S3ではprefix末尾slashとして使う。動画保存のstoredPrefixもこの規約と一致している。GCで通常削除のエラー握り潰しを再利用しないことは確定計画に沿い、将来のdriftという仮定だけで通常削除全体の待機/失敗挙動を変更しない。双方の保存先判定をstorageテストで検証した。
+- **P2-11（100件/回の上限）: 妥当、修正。** 100件はメモリ上限の1バッチとし、同じ60秒予算内でfileIdのkeysetを進めて次バッチを取得する。これにより1日28,800件という人工的な上限をなくし、locked候補を同じ実行で繰り返さない。205件のdue候補について複数バッチを走査し、一度ずつ試すテストを追加した。物理I/O待機はなお処理量の上限であり、無制限の入力に追従する保証はしない。既存system queueを長時間占有する最大60分化や無条件並列I/Oは採らず、固定の負荷予算と観測を維持する。
+- **P3:** 候補欠損等のdeferred分類は「この試行で物理回収していない」の意味で既存ログを維持する。stackはlogger.warn(err)に記録し、永続lastErrorは要約を保持する。migrationインデントは既存ファイル群でも混在し動作問題はない。投稿削除統計は元の実装どおり選択集合を数えるもので、今回の候補はRETURNING実削除集合だけから作る。統計の既存競合挙動変更は本件に広げない。
+- **要検証1:** MiUserの構造化ファイル参照はavatarId/bannerId。Ad/Meta/Emoji/AvatarDecorationはURL文字列を保存し、構造化fileId参照は無い。任意URLを参照として解析することは計画対象外。
+- **要検証4/5:** 初回実装でmigration up/down/upとpending DDL0件、maxWorkers1を確認済。今回の変更後も再検証する。
+
+`MISSKEY_MIGRATION_CREATE_INDEX_CONCURRENTLY=1` は既存ormconfigのmigrationsTransactionMode=eachと組み合わせ、Page式索引をtransaction外で作成する運用オプション。既定は通常のtransaction内作成。本件のJSON抽出関数の意味を将来変える場合は、同migrationでPage式索引も再構築してからGCを再開し、rollbackではindexを先に戻す。
+
+### 第1回レビュー修正の検証進捗
+
+- guard/query36 tests成功、修正後backend lint/typecheck成功。
+- HTTP e2eのmissing/deletingエラー・sameURI新ID参照2件成功。通常FK対比のテストを追加して広域検証へ含める。
+- JXL有効libvips 8.18.3のimage `misskey-issue15-vips:dev` にffmpegを追加した検証専用image `misskey-issue18-test:dev` を作成。独立worktreeのsharpをこのimage内でsource buildし、fullunit/e2eの画像前提を満たして広域検証を進行中。成果物はnode_modules/builtのみでtracked生成差分なし。
+
+
+### 第1回レビュー修正の広域検証結果（追記）
+
+- JXL有効libvips/ffmpeg imageでbackend unit全67ファイルを実行。66ファイル・830件成功、SearchServiceのMeilisearch接続だけが検証用サービス未起動によりECONNREFUSEDだった。CI同versionのMeilisearch v1.49.0を専用containerで57712に起動し、SearchService32件＋UserSearchService9件のfocused再実行が全成功。合算して異なる846件成功、元からskip指定のDriveFileEntity/DriveFolderEntity各1件だけが未実行。ログは`/tmp/issue18-review-fullunit.log`と`/tmp/issue18-review-search-unit.log`。今回の失敗をコード起因と混同しない。
+- レビューで求めた実DriveService.addFileの同URI/同bytes再登録テストも成功。storage障害相当のdeleting descriptorが残る間に、同ownerの別IDと別proxy keyが生成される。
+- 4件の新規migrationを専用DBでup→4件down→upし、最新版entityに対するpending DDL0件を確認。`/tmp/issue18-review-migrations.log`末尾はAll migrations are clean。
+- レビュー修正後のbackend全typecheck/eslintも成功（`/tmp/issue18-review-final-lint.log`）。API e2e全体はguardを有効にして実行中であり、結果は後続に記録する。
+
+- 全E2E初回は1262件成功したが、synalio/abuse-reportが第2Nest appを起動してtest DataSourceのdropSchemaを再実行し、guardが消えるため共通teardownが失敗した。残った関数により後続suite setupも失敗した。moveと同様、当該suiteのqueue起動直後にguardを再設置し、共通setup/teardownはtest限定のIF EXISTS付き関数清掃でschema再初期化・中断残骸に対応した。本番migrationの厳密なdownは変更していない。fixture eslint成功後、全E2Eを再実行中（`/tmp/issue18-review-fulle2e2.log`）。
+
+### Opus 5 第2回レビューの採否
+
+- N1: E2E fixture問題として妥当で対応済。第2Nest appのtest schema再作成が実際の発火点だった。setup/teardownのtest限定清掃とqueue開始後のguard復旧を採用した。本番migrationはtransactional up/downで履歴が管理され、冪等化を必須とする根拠がない。CREATE OR REPLACEで将来の式索引を無意識に古いまま残すリスクを増やさず、誤順序downも引き続き検出する。
+- N2: 中央で発生するクライアント入力エラーとして扱う。ApiCallServiceの既存RATE_LIMIT_EXCEEDED/AUTHENTICATION_FAILED同様、各endpoint metaに同じ共通エラーを複製しない。追加UUIDはpackages内検索で当該定義1件のみ。pages/createのNO_SUCH_FILEはb7b97489-0f66-4b12-a5ff-b21bd63f6e1c、notes/createはb6992544-63e7-67f0-fa7f-32444b1b5306で、元々同codeが発生元別UUIDを持つ規約。今回も中央DB guard発生元を一意に識別する。ログ必須化は不採用: JSON内の普通のmissing ID入力でも発火するため「低頻度のGC競合のみ」という前提が誤り。既存ApiErrorと同じ400応答とし、不正入力のmessage/userIdを必ずwarnする新しい運用方針は導入しない。HTTPテストで通常FKの500診断保持と区別する。
+- N3: 妥当として改善。due時刻の古い順を維持する(nextAttemptAt,fileId) tuple cursorと同順複合indexへ変更する。Dateのミリ秒丸めで同じ候補を繰り返さないようcursor時刻はPostgreSQLの::text値を保存する。逆ID順のmicrosecond差を持つ205候補の実DBテストで順序と各1回を確認する。
+- N4: 不採用。WHENのORはeyeCatchingImageIdか非空JSONのいずれかに実参照があればtrueで、他項NULLでもguardを呼ぶ。全項NULL/空は抽出されるIDが無く保護すべき参照も無い。nullable fixtureはこの広い入力も試すためで、具体的な保護回避反例は無い。IS DISTINCT FROMにして空NULL行でも関数を呼ぶ必要はない。
+- N5: 個別warn追加は予防提案として不採用。unlock例外は既にprocessのfailed+logger.warnへ到達し診断が残るため「観測不能」ではない。接続断ならPostgreSQLがsession lockを解放する。専用warnだけでは指摘の仮定である生きた接続のlock残存を解決せず、実際の故障根拠なく追加しない。旧row_ids関数DROP IF EXISTSは本番へ未マージの初期実装との差分で、masterのmigration履歴は一切編集していない。
+- 残余のChat/Gallery/Channel線形走査は今回の計測規模（Chat10万、Gallery/Channel各1万）の結果であり、より大きい運用で同じ性能を保証しない。候補backlog/最古時刻/処理時間を監視し、規模増大で走査が支配的になれば該当列のindexを追加する。countの概算化提案は実害根拠が示されておらず、計画の正確な未回収候補数を維持する。
+
+### 第2回レビュー修正後の検証結果
+
+- 全E2E: 30ファイル、1332件成功、既存2skip/20todo、exit 0（`/tmp/issue18-review-fulle2e2.log`）。Page guardの400、無関係FKの500、deleting中の同URI再登録の3件も成功。
+- tuple cursor変更後の清掃processor2ファイル51件成功（`/tmp/issue18-review2-processors.log`）。205件/microsecond境界のテストを含む。raw SQL cast列を引用する修正後に再実行した。
+- 複合due索引の新migrationをup/down/upし、pending DDL 0件（`/tmp/issue18-review2-migrations.log`）。この時点の新規migrationは合計5件。
+- backend全lint/typecheckと最終変更ファイルeslint成功（`/tmp/issue18-review2-lint.log`、`/tmp/issue18-review2-final-eslint.log`）。
+- N1のunit中断再開についても、2つの清掃processor fixtureでup前にtest限定の残存関数清掃を行うようにした。通常のunit終了時は厳密なdownでproduction rollbackを引き続き検証する。
+- 独立subagentは第2回修正差分も必須指摘なし。Opus 5は第3回再レビュー中。
+
+### 正式レビューの収束
+
+Opus 5は保存セッション `4e3a4bea-aa1b-4b95-a773-9c8f7b8e4aac` で3回レビューし、第3回で第1/2回の指摘をすべて修正済みまたは根拠により撤回として収束を明示した。独立subagentも全差分、tuple/indexの追加修正、最後のunit fixture前処理まで再確認し、必須指摘なしと回答した。unitの両清掃fixtureに中断後の関数清掃があることも確認済み。レビューの回数を理由に指摘を残していない。
+
+migration5本の整理案やcursorの明示castなどは不具合根拠のない任意提案として現状を維持する。各機能の修正・検証履歴をコミット単位で残す。PR/CIと最新masterの統合後確認を引き続き実施する。
+
+### 最新masterの統合
+
+#15のPR #20が全39 CI成功後にmasterへマージされたため、そのcommit `7f52e05f34a38c3350ac0e702092590e16369843` を統合する。競合は計画Docsのadd/addとCHANGELOGの追記のみで、各issueの最新計画・判断・検証履歴と両changelog行を保持した。製品コードの競合・手動改変はない。統合後の画像判定/清掃processorテストと型検査を行う。
+
+統合後のFileInfo44件＋清掃processor51件、計95件が同一JXL環境で成功した（`/tmp/issue18-integrated-tests.log`）。backendの全型検査とESLintもexit0（`/tmp/issue18-integrated-lint.log`）。Opusの保存セッションでの追加統合確認と独立subagentの確認はいずれも新たな必須指摘なし、収束維持。以降のPR/CI・マージ結果は[GitHub issue #18](https://github.com/Sigma-project/misskey/issues/18)に紐づくPRで確認できる。
+
+### PR #21 レビュー: 候補INSERTのbind上限（2026-09-08）
+
+- Codexコメント3950766265は妥当。再帰reply treeからの削除RETURNING集合はroot選択のcurrentLimitだけでは制限できず、全unique fileIdを1回のINSERTへ渡すとPostgreSQLのbind parameter上限を超えうる。
+- 候補INSERTを1000件ごとに分割し、すべて既存の投稿DELETEと同一transaction内でawaitする。後続batchが失敗した場合は先行候補INSERTと投稿DELETEをまとめてrollbackする。削除条件、RETURNING限定、重複候補のorIgnoreは維持する。
+- 実DBで65536個のDrive IDsを持つ削除RETURNING集合を用意し、全65536候補が保存され投稿が削除される境界テストを追加。さらに先行batch成功後だけ例外を出すstatement triggerで2batch目を失敗させ、候補0件と投稿残存を確認した。入力は巨大RETURNING集合に焦点を当てたDB fixtureで、APIの1投稿添付上限を変更するものではない。
+- CleanRemoteNotesProcessorService全42件成功（`/tmp/issue18-bind-boundary.log`）。backend全lint/typecheck成功（`/tmp/issue18-bind-lint.log`）、変更src/test eslintはerror 0（既存同様のwarningあり、`/tmp/issue18-bind-eslint.log`）。製品schema/API定義変更なし、migration/SDK生成は不要。
+
+### PRの追加指摘: 期限切れキャッシュの統計（2026-09-08、検討中）
+
+PRコメント3950766259は妥当な経路を指摘している。既存deletePostProcessの期限切れ化は元のsizeを保持したisLink行へ更新し、元descriptorでchart減算を呼ぶ。後日のGCが同じsizeで減算すると二重計上になる。新規pure linkはsize=0でcountが加算されるため、全isLinkのchartを省く修正も正しくない。chart/eventの永続exactly-once化は引き続き対象外。
+
+Codexの比較案は、既存isLink+positive sizeから期限切れと判定する最小対応と、今後のzero-byte expiryも区別できる内部状態を追加して既存positive-size行は互換判定する対応。後者は最後のDELETE RETURNING行から通知用の最新状態を取り、storage用descriptorを独立保持する案。いずれも未確定で、ユーザー判断としては記録しない。
+
+Fable 5.1へ同要件・制約とコードを渡して設計比較を依頼したが、API 429 / `Fable 5.1 requires usage credits. Switch to another model to continue.` により実行されなかった（保存session50afb165-05be-4527-938d-e6c9383a7659、/tmp/issue18-fable-chart.json）。更新されたユーザーAGENTSの指定モデル規則に従い、Fableの利用再開を待つか代替モデルを許可するかを質問中。無断の代替設計や、Fableとの比較完了とは扱わない。統計側のコードは未変更。候補分割登録の修正・再レビューは独立に進める。
+
+### Opus 5 再レビュー: 投稿DELETEのbind上限（2026-09-08）
+
+- 追加指摘も妥当。recursive CTEはrootのcurrentLimitを超える子孫もnoteIdsへ返すため、whereInIds(deletableNoteIds)の1ID/1bindも65535を超えうる。
+- DELETEを `id = ANY(:noteIds::varchar[])` の単一配列bindへ変更する。削除は分割せず1つのDELETE RETURNINGを維持し、候補生成はその実削除集合を使い、候補INSERT分割のatomicityも維持する。
+- 実DB境界テストはroot＋65536返信を再帰選択から通し、別のlocal返信を含む保護treeも同時に用意する。既定の短いstatement_timeoutでは大量DELETEの時間制限が先に発火したため、bind境界を確認する当該テストtransaction内だけLOCAL statement_timeoutを120秒へ拡張した。製品の時間予算・既存の複雑な木の処理制約は変更しない。
+- 検証完了: root＋65536返信の削除、保護tree残存、候補65536件分割、途中失敗rollbackを含む清掃processor全43件成功（`/tmp/issue18-delete-bind.log`）。backend全lint/typecheckおよび変更src/test eslint成功（`/tmp/issue18-delete-bind-lint.log`、`/tmp/issue18-delete-bind-eslint.log`）。
+
+### bind上限対策の再レビュー収束（2026-09-08）
+
+Opus 5は同一保存セッションで投稿DELETEの単一配列bind、65536返信の実DB結果、候補INSERTの分割・rollbackを再確認し、未解決の妥当な必須指摘なしと回答した（`/tmp/issue18-opus-delete-bind.json`）。独立subagentも同差分を確認して必須指摘なし、全43テスト成功の条件を満たした。bind指摘3950766265への対応は収束。統計指摘3950766259は未解決であり、指定設計モデルの利用再開または代替のユーザー判断を引き続き待つ。
+
+仕上げ確認: 今回の追加修正は製品schema/API定義、新規ソース、locale、画像変換、CI設定を変更しないため、追加migration・SDK生成・SPDX・locale対応は非該当。既存CHANGELOGの機能記載を維持し、backend lint/typecheck・境界を含む43テスト・diff checkは成功。更新後CIはpush後に確認する。
+
+### ユーザー判断: 設計比較モデルの代替（2026-09-08）
+
+Fable 5.1が利用できないため、今回の統計二重減算修正の設計比較をOpus 5へ代替する提案に、ユーザーが「いいよ」と明示承認した。理由の提示はない。既存の実装許可の範囲で設計比較・議論、実装、検証、Opus 5とsubagentの再レビューを継続する。
+
+### 統計修正の設計比較・第1回（2026-09-08）
+
+代替承認済みOpus 5（保存session `27392427-32dd-49b0-b024-cc9bb7c6495f`）は、案A（isLinkかつpositive sizeの互換判定）を推奨し、案B（内部expiry状態boolean追加）のschemaコストを指摘した。双方とも保存descriptorではなく最終DELETE RETURNING行による判断と、chartだけ省略してstream/eventを維持する点に一致した。
+
+Codexは案Aだけでは合法な0byte cached fileの期限切れ後削除が必ず再減算されるため、今後の行を明示状態で区別する案Bを推奨した。既存FileInfoの空ファイルunit、detectTypeのoctet-stream分岐、Drive.saveのsize保存に最低サイズ制約がないことを根拠にした。Opusが挙げた「6本目migrationを避ける確定制約」は存在しないため訂正を求めた。best-effortは非永続通知の障害窓を残す意味であり、正常入力の既知二重計上を恒久的に残す根拠にはしない。旧0byte expiryは既存DBだけでは復元不能という限界を区別する。
+
+競合の追加根拠: 既存expiryはGC advisory lockに参加せず、候補列挙後にstale fileを受け取り得る。GC第一transaction後にexpiryが完了する順序は最終DELETE RETURNINGで判定できるが、GC DELETE後に遅いexpiryがUPDATE affected0のままnotifyする順序は残る。expiry UPDATEをisLink=falseの実変更行だけに限定し、affected1のとき旧cached状態から通知する局所修正を第2回議論へ提示した。全Drive削除のexactly-once基盤は引き続き対象外。
+
+### 統計修正の第2回議論・採用方針（2026-09-08）
+
+Opus 5は前提の誤りを訂正し、0byteは正常入力であり既知二重減算をbest-effortとして残すべきではないと同意した。案Bを採用し、expiryの条件付きUPDATEも必須という結論で一致した。第2回の出力ファイルは/tmp容量不足で空になったが、保存済みClaudeセッションのassistant回答から全文を回収した（`/tmp/issue18-chart-design2-recovered.txt`）。比較・議論は実行済みで、代替モデルはユーザー許可済みのOpus 5。
+
+採用する実装:
+
+1. DriveFileに内部boolean `isRemoteCacheExpired`（default false）と新規migrationを追加。expiryによりcached→linkへ遷移した行でtrueにする。API pack/schemaには追加しない。大量既存行UPDATEは行わない。
+2. expiry UPDATEは `{ id, isLink: false }` を条件にし、affected 1のときだけ旧cached行で通知する。これによりGC削除後のstale expiryと重複expiryでの再減算・無意味なproxy key更新を防ぐ。既存行の実DELETE全体をexactly-once化する変更は行わない。
+3. notifyFileDeletedはremoteかつmarker true、またはlegacy isLinkかつsize>0の場合にchartだけ省略。stream/event・moderation処理は維持。pure link（size0、marker false）と通常cached/local fileは従来どおり減算する。
+4. GC最終transactionのDELETE RETURNINGから得た実削除行で通知判定する。永続descriptorは引き続きstorage再試行用に保持し、古い状態で会計判断しない。
+
+代替案の採否: chart countの意味を行数に変更しexpiryでsizeを0へ書き換える案は既存APIのファイルサイズ情報を失いchart基盤を変更するため不採用。expiryへGC advisory lockを広げる案は条件付きUPDATEより結合と並行性への影響が大きく不採用。単純な再SELECTはTOCTOUを残すため不採用。
+
+限界: 適用前に期限切れした0byte linkは既存DBだけではpure linkと区別不能で、過去のchart値の修復は保証しない。これらが必ず90日以内に消えるとは限らず、参照保護や設定停止で残りうる。今後同一行を再キャッシュする経路が追加される場合はmarkerを解除する。chart/eventのcommit後送達は既存best-effortのまま。
+
+検証: 正常cached・pure link・legacy expired・0byte expiry→GC・localのchart/eventを確認し、GC T1後expiry→T2、GC完了後stale expiry、重複expiry、deleting再開を実DBで検証する。migration up/down/upとpending DDL 0、backend lint/typecheck、関連unit/E2E、Opus 5と独立subagentの再レビューを行う。今回の修正は既存の明示実装許可とPR指摘修正の範囲で開始する。
+
+### 統計修正の実装と検証（2026-09-08）
+
+- 合意した案Bを実装。DriveFile内部isRemoteCacheExpiredはdefault false、expiryのcached→link更新と同時にtrue。巨大backfillは行わない。expiryはidとisLink=falseをUPDATE条件にし、affected1のときだけ旧状態で通知する。最終GCはDELETE RETURNINGの実削除行を通知に使い、永続descriptorはstorage再試行専用に維持する。
+- remoteのmarker true/legacy positive-size linkはchartだけ省略し、実削除時のstream・moderationは保持する。重複expiry/削除済み行のstale expiryは実状態遷移が無いので通知せず、proxy keyも再更新しない。通常Drive削除全体のexactly-once化は行っていない。
+- 新規RemoteCacheExpiry実DBテスト9件: 0/100byte expiry→GC、cached/purelink/legacy/local、GC T1→expiry→T2、GC完了→stale expiry、重複expiry、deleting状態から再開を検証。chart/eventと保存keyの使用をassertする。storageはmock、参照ガードは既存専用テストに委ね、expiry update/GC両transactionは実DBを使う。pack結果に内部markerがないことも確認した。
+- 関連unitはDriveService11+GC11+新規9=31件成功（`/tmp/issue18-chart-tests.log`）。pack非露出assert追加後の新規9+NoteCreateService7も成功（`/tmp/issue18-chart-final-tests.log`）。既存型付きMiDriveFile fixtureにdefault falseを補った。
+- migration6のup/down/up成功、pending DDL0（`/tmp/issue18-chart-migrations.log`）。backend全lint/typecheck、変更test eslint成功（`/tmp/issue18-chart-lint.log`、`/tmp/issue18-chart-test-eslint.log`）。手書きmigrationのみで、trackedコード生成物はない。API meta/paramDef/resを変更しないためSDK生成は非該当。
+- 独立subagentは必須指摘なし。Opus 5実装レビューはsession limitにより開始できず、rootが利用再開待ちまたは代替についてユーザー判断を確認中。この段階ではレビュー完了扱いにしない。
+- 統計修正後のDrive/remote-file-cleanup関連HTTP E2E 7件成功（`/tmp/issue18-chart-e2e.log`）。
+
+### ユーザー判断: 実装レビューの代替（2026-09-08）
+
+Opus 5の実装レビューが利用上限で開始できなかったため、ユーザーが「今回は Codex subagent で代替して」と明示承認した。理由の追加提示はない。今回の統計修正レビューに限り、既存の独立レビュー担当とは別のCodex subagentへ計画・ユーザー判断・実装差分・検証結果を渡して代替レビューを依頼する。Opus 5が実装レビューを実施したとは記録しない。
+
+### 統計修正の代替レビュー収束（2026-09-08）
+
+既存の独立担当 `review18_final` は最終commit dcaee24cd3と検証結果を確認し必須指摘なしで収束した。ユーザー承認によりOpus 5を代替する新しい担当 `review18_substitute` も、確定設計・実装・chart入力・migration・API非露出・検証ログを読み取り確認し、必須指摘なしで収束した。両者は実装担当とは独立しており、代替担当がテストを再実行したとは扱わない。
+
+PRコメント3950766259（統計二重減算）と3950766265（bind上限）は妥当性を検証して修正・再レビューを完了。更新commitのpush後にCIとPR上の追加レビューを確認し、すべての必要CI成功・未解決指摘なし・マージ条件成立を確認してからマージする。
+
+### 最新CIのE2E終了時DDL競合と修正（2026-09-08）
+
+head a819944520のCIは36成功・backend E2E 1失敗。PostgreSQLログでProcess329のSQLが `DROP FUNCTION IF EXISTS remote_file_cleanup_guard() CASCADE`、相手がNoteEntityService.packのnote/user JOIN SELECTと確認できた（`/tmp/issue21-a819-backend-e2e-failure.log` 3324–3328行、SQLSTATE40P01）。単なる既存の不安定テストとして再試行せず、今回のsetup.afterAllが稼働中のテーブルへDDLを発行する問題として修正する。
+
+採用修正はafterAllを専用DB接続のdestroyのみにする。関数清掃は既存beforeAllのapp reset→initTestDb(false)によるschema再作成→残存関数DROP→guard再設置へ集約する。最後に関数が残っても隔離テストDB内で、次回runのbeforeAllで清掃される。afterAllへenv-resetを追加する案は新アプリ再起動も伴うため採用しない。製品コード・migrationは変更しない。
+
+同じ修正・再レビューサイクルとして、既存独立review18_finalとユーザー承認済み代替review18_substituteが差分・原因を照合し、両者とも全E2Eとlint成功条件で必須指摘なし。backend全型検査・lint成功、全E2Eを `/tmp/issue18-final-full-e2e.log` で実行中。最新コミットへのGitHub自動レビューは追加指摘なしで完了し、既存2threadは解決済みだったが、CI失敗のためマージは実行していない。
+
+修正後の全E2Eは30ファイル1332件成功、既存2skip/20todo、exit0（`/tmp/issue18-final-full-e2e.log`）。既存と同じVite終了待ちの警告は出るがテストプロセスは正常終了。backend全型検査・lintとsetup.e2e.tsの個別ESLintもexit0（`/tmp/issue18-final-cleanup-lint.log`、`/tmp/issue18-final-cleanup-eslint.log`）。両レビューの検証条件を満たしたため収束。API/schema/locale/画像変換/CI設定の追加変更はなく、SDK生成・migration追加は非該当。製品機能のCHANGELOG記載を維持し、diff check成功を確認して修正をcommit・pushする。
