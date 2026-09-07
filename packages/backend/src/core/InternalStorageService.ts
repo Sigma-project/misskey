@@ -5,29 +5,25 @@
 
 import * as fs from 'node:fs';
 import * as Path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
 import { Inject, Injectable } from '@nestjs/common';
 import { DI } from '@/di-symbols.js';
 import type { Config } from '@/config.js';
 import { bindThis } from '@/decorators.js';
 
-const _filename = fileURLToPath(import.meta.url);
-const _dirname = dirname(_filename);
-
-const path = Path.resolve(_dirname, '../../../../files');
-
 @Injectable()
 export class InternalStorageService {
+	private readonly path: string;
+
 	constructor(
 		@Inject(DI.config)
 		private config: Config,
 	) {
+		this.path = Path.resolve(this.config.rootDir, 'files');
 	}
 
 	@bindThis
 	public resolvePath(key: string) {
-		return Path.resolve(path, key);
+		return Path.resolve(this.path, key);
 	}
 
 	/**
@@ -36,8 +32,8 @@ export class InternalStorageService {
 	 */
 	@bindThis
 	public resolvePathWithinBase(key: string): string | null {
-		const base = Path.resolve(path);
-		const resolved = Path.resolve(path, key);
+		const base = Path.resolve(this.path);
+		const resolved = Path.resolve(this.path, key);
 		if (resolved !== base && !resolved.startsWith(base + Path.sep)) {
 			return null;
 		}
@@ -77,7 +73,7 @@ export class InternalStorageService {
 	public delPrefix(prefix: string) {
 		const resolved = this.resolvePathWithinBase(prefix);
 		// ベース自身や範囲外は削除しない（安全側）
-		if (resolved == null || resolved === Path.resolve(path)) {
+		if (resolved == null || resolved === Path.resolve(this.path)) {
 			return;
 		}
 		fs.rm(resolved, { recursive: true, force: true }, () => {});

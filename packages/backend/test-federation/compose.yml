@@ -8,7 +8,7 @@ services:
       file: ./compose.tpl.yml
       service: misskey
     command: >
-      bash -c "
+      bash -ec "
         npm install -g pnpm
         pnpm -F backend i
         pnpm -F misskey-js i
@@ -18,6 +18,8 @@ services:
   tester:
     image: node:${NODE_VERSION}
     depends_on:
+      daemon:
+        condition: service_healthy
       a.test:
         condition: service_healthy
       misskey.a.test:
@@ -31,6 +33,10 @@ services:
       - NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/rootCA.crt
     volumes:
       - type: bind
+        source: ../../../scripts/build-sharp.mjs
+        target: /misskey/scripts/build-sharp.mjs
+        read_only: true
+      - type: bind
         source: ../package.json
         target: /misskey/packages/backend/package.json
         read_only: true
@@ -43,16 +49,12 @@ services:
         target: /misskey/packages/backend/test-federation/test
         read_only: true
       - type: bind
-        source: ../jest.config.cjs
-        target: /misskey/packages/backend/jest.config.cjs
+        source: ../vitest.config.ts
+        target: /misskey/packages/backend/vitest.config.ts
         read_only: true
       - type: bind
-        source: ../jest.config.fed.cjs
-        target: /misskey/packages/backend/jest.config.fed.cjs
-        read_only: true
-      - type: bind
-        source: ../jest.js
-        target: /misskey/packages/backend/jest.js
+        source: ../vitest.config.fed.ts
+        target: /misskey/packages/backend/vitest.config.fed.ts
         read_only: true
       - type: bind
         source: ../scripts/compile_config.js
@@ -94,9 +96,17 @@ services:
         source: ./certificates/rootCA.crt
         target: /usr/local/share/ca-certificates/rootCA.crt
         read_only: true
+      - type: bind
+        source: ../../misskey-reversi/package.json
+        target: /misskey/packages/misskey-reversi/package.json
+        read_only: true
+      - type: bind
+        source: ../../misskey-reversi/built
+        target: /misskey/packages/misskey-reversi/built
+        read_only: true
     working_dir: /misskey
     entrypoint: >
-      bash -c '
+      bash -ec '
         npm install -g pnpm
         pnpm -F misskey-js i --frozen-lockfile
         pnpm -F backend i --frozen-lockfile
@@ -110,6 +120,10 @@ services:
       redis.test:
         condition: service_healthy
     volumes:
+      - type: bind
+        source: ../../../scripts/build-sharp.mjs
+        target: /misskey/scripts/build-sharp.mjs
+        read_only: true
       - type: bind
         source: ../package.json
         target: /misskey/packages/backend/package.json
@@ -138,14 +152,31 @@ services:
         source: ../../../patches
         target: /misskey/patches
         read_only: true
+      - type: bind
+        source: ../../i18n/package.json
+        target: /misskey/packages/i18n/package.json
+        read_only: true
+      - type: bind
+        source: ../../misskey-js/package.json
+        target: /misskey/packages/misskey-js/package.json
+        read_only: true
+      - type: bind
+        source: ../../misskey-reversi/package.json
+        target: /misskey/packages/misskey-reversi/package.json
+        read_only: true
     working_dir: /misskey
     command: >
-      bash -c "
+      bash -ec "
         npm install -g pnpm
         pnpm -F backend i --frozen-lockfile
-        pnpm exec tsgo -p ./packages/backend/test-federation
-        node ./packages/backend/test-federation/built/daemon.js
+        pnpm exec tsc -p ./packages/backend/test-federation
+        exec node ./packages/backend/test-federation/built/daemon.js
       "
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "const a = require('node:fs').readFileSync('/proc/1/cmdline', 'utf8').split(String.fromCharCode(0)); process.exit(require('node:path').basename(a[0]) === 'node' && a[1] === './packages/backend/test-federation/built/daemon.js' ? 0 : 1)"]
+      interval: 5s
+      retries: 60
 
   redis.test:
     image: redis:7-alpine

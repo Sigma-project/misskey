@@ -26,51 +26,21 @@ jobs:
             ref: refs/pull/${{ github.event.number }}/merge
 
     steps:
-    - uses: actions/checkout@v6.0.1
+    - uses: actions/checkout@v7.0.0
       with:
         ref: ${{ matrix.ref }}
         submodules: true
     - name: Setup pnpm
-      uses: pnpm/action-setup@v4.2.0
-    - name: Install libvips dependencies
+      uses: pnpm/action-setup@v6.0.9
+    - name: Setup libvips
       if: hashFiles('mise.toml') != ''
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          libglib2.0-dev libexpat1-dev libjpeg-turbo8-dev libpng-dev libwebp-dev \
-          libtiff-dev libexif-dev liblcms2-dev libcgif-dev libjxl-dev libheif-dev \
-          libfftw3-dev liborc-dev libspng-dev libarchive-dev libhwy-dev librsvg2-dev
-    - name: Restore libvips cache
-      id: cache-libvips
-      if: hashFiles('mise.toml') != ''
-      uses: actions/cache@v4
-      with:
-        path: /tmp/libvips-destdir
-        key: libvips-v4-8.18.0-${{ runner.os }}-${{ runner.arch }}
-    - name: Build libvips from source
-      if: hashFiles('mise.toml') != '' && steps.cache-libvips.outputs.cache-hit != 'true'
-      run: |
-        sudo apt-get install -y build-essential ninja-build meson pkg-config
-        cd /tmp
-        curl -sL https://github.com/libvips/libvips/releases/download/v8.18.0/vips-8.18.0.tar.xz -o vips.tar.xz
-        tar xf vips.tar.xz
-        cd vips-8.18.0
-        meson setup build --prefix=/usr/local --libdir=lib --buildtype=release -Dintrospection=disabled -Djpeg-xl=enabled
-        cd build
-        meson compile
-        DESTDIR=/tmp/libvips-destdir meson install
-    - name: Install libvips
-      if: hashFiles('mise.toml') != ''
-      run: |
-        sudo cp -a /tmp/libvips-destdir/usr/local/. /usr/local/
-        sudo ldconfig
-        pkg-config --modversion vips-cpp
+      uses: ./.github/actions/setup-libvips
     - name: Setup mise
       if: hashFiles('mise.toml') != ''
       uses: jdx/mise-action@v2
     - name: Use Node.js (fallback)
       if: hashFiles('mise.toml') == ''
-      uses: actions/setup-node@v6.1.0
+      uses: actions/setup-node@v7.0.0
       with:
         node-version-file: .node-version
         cache: pnpm
@@ -91,7 +61,7 @@ jobs:
     - name: Copy API.json
       run: cp packages/backend/built/api.json ${{ matrix.api-json-name }}
     - name: Upload Artifact
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: api-artifact-${{ matrix.api-json-name }}
         path: ${{ matrix.api-json-name }}
@@ -104,7 +74,7 @@ jobs:
           PR_NUMBER: ${{ github.event.number }}
         run: |
           echo "$PR_NUMBER" > ./pr_number
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: api-artifact-pr-number
           path: pr_number

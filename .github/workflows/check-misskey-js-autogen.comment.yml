@@ -1,0 +1,89 @@
+name: Check Misskey JS autogen (comment)
+
+on:
+  workflow_run:
+    types: [completed]
+    workflows:
+      - Check Misskey JS autogen # check-misskey-js-autogen.yml
+
+jobs:
+  comment-misskey-js-autogen:
+    runs-on: ubuntu-latest
+    # No code is cloned or executed here, so it is safe to hold pull-requests: write
+    if: ${{ github.event.workflow_run.event == 'pull_request' }}
+    permissions:
+      actions: read
+      pull-requests: write
+
+    steps:
+      # The result is missing when the run failed before the check job (e.g. the PR does not build), so do not fail here
+      - name: Download result
+        id: download-result
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: misskey-js-autogen-result
+          path: result
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      # The artifact comes from a run that built fork code, so validate it before using
+      - name: Load result
+        id: load-result
+        if: steps.download-result.outcome == 'success'
+        run: |
+          changes="$(cat result/changes)"
+
+          case "$changes" in
+            true|false) ;;
+            *) echo "invalid result"; exit 1;;
+          esac
+
+          echo "changes=$changes" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve current pull request
+        id: resolve-pr
+        if: steps.load-result.outcome == 'success'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const run = context.payload.workflow_run;
+            const candidates = (run.pull_requests ?? []).filter(pr => pr.head.sha === run.head_sha);
+            if (candidates.length !== 1) {
+              core.notice('Skipping autogen: no unique pull request is associated with this run.');
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: candidates[0].number });
+            if (pr.state !== 'open' || pr.head.sha !== run.head_sha || pr.head.repo?.id !== run.head_repository?.id) {
+              core.notice('Skipping stale autogen report.');
+              return;
+            }
+            core.setOutput('is-current', 'true');
+            core.setOutput('pr-number', String(pr.number));
+
+      - name: send message
+        if: steps.resolve-pr.outputs.is-current == 'true' && steps.load-result.outputs.changes == 'true'
+        uses: thollander/actions-comment-pull-request@v3
+        with:
+          pr-number: ${{ steps.resolve-pr.outputs.pr-number }}
+          comment-tag: check-misskey-js-autogen
+          message: |-
+            Thank you for sending us a great Pull Request! 👍
+            Please regenerate misskey-js type definitions! 🙏
+
+            example:
+            ```sh
+            pnpm run build-misskey-js-with-types
+            ```
+
+      - name: send message
+        if: steps.resolve-pr.outputs.is-current == 'true' && steps.load-result.outputs.changes == 'false'
+        uses: thollander/actions-comment-pull-request@v3
+        with:
+          pr-number: ${{ steps.resolve-pr.outputs.pr-number }}
+          comment-tag: check-misskey-js-autogen
+          mode: delete
+          message: "Thank you!"
+          create_if_not_exists: false
