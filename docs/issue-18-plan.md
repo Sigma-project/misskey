@@ -369,3 +369,13 @@ Opus 5は前提の誤りを訂正し、0byteは正常入力であり既知二重
 - migration6のup/down/up成功、pending DDL0（`/tmp/issue18-chart-migrations.log`）。backend全lint/typecheck、変更test eslint成功（`/tmp/issue18-chart-lint.log`、`/tmp/issue18-chart-test-eslint.log`）。手書きmigrationのみで、trackedコード生成物はない。API meta/paramDef/resを変更しないためSDK生成は非該当。
 - 独立subagentは必須指摘なし。Opus 5実装レビューはsession limitにより開始できず、rootが利用再開待ちまたは代替についてユーザー判断を確認中。この段階ではレビュー完了扱いにしない。
 - 統計修正後のDrive/remote-file-cleanup関連HTTP E2E 7件成功（`/tmp/issue18-chart-e2e.log`）。
+
+### ユーザー判断: 実装レビューの代替（2026-09-08）
+
+Opus 5の実装レビューが利用上限で開始できなかったため、ユーザーが「今回は Codex subagent で代替して」と明示承認した。理由の追加提示はない。今回の統計修正レビューに限り、既存の独立レビュー担当とは別のCodex subagentへ計画・ユーザー判断・実装差分・検証結果を渡して代替レビューを依頼する。Opus 5が実装レビューを実施したとは記録しない。
+
+### 統計修正の代替レビュー収束（2026-09-08）
+
+既存の独立担当 `review18_final` は最終commit dcaee24cd3と検証結果を確認し必須指摘なしで収束した。ユーザー承認によりOpus 5を代替する新しい担当 `review18_substitute` も、確定設計・実装・chart入力・migration・API非露出・検証ログを読み取り確認し、必須指摘なしで収束した。両者は実装担当とは独立しており、代替担当がテストを再実行したとは扱わない。
+
+PRコメント3950766259（統計二重減算）と3950766265（bind上限）は妥当性を検証して修正・再レビューを完了。更新commitのpush後にCIとPR上の追加レビューを確認し、すべての必要CI成功・未解決指摘なし・マージ条件成立を確認してからマージする。
