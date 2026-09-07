@@ -317,3 +317,10 @@ PRコメント3950766259は妥当な経路を指摘している。既存deletePo
 Codexの比較案は、既存isLink+positive sizeから期限切れと判定する最小対応と、今後のzero-byte expiryも区別できる内部状態を追加して既存positive-size行は互換判定する対応。後者は最後のDELETE RETURNING行から通知用の最新状態を取り、storage用descriptorを独立保持する案。いずれも未確定で、ユーザー判断としては記録しない。
 
 Fable 5.1へ同要件・制約とコードを渡して設計比較を依頼したが、API 429 / `Fable 5.1 requires usage credits. Switch to another model to continue.` により実行されなかった（保存session50afb165-05be-4527-938d-e6c9383a7659、/tmp/issue18-fable-chart.json）。更新されたユーザーAGENTSの指定モデル規則に従い、Fableの利用再開を待つか代替モデルを許可するかを質問中。無断の代替設計や、Fableとの比較完了とは扱わない。統計側のコードは未変更。候補分割登録の修正・再レビューは独立に進める。
+
+### Opus 5 再レビュー: 投稿DELETEのbind上限（2026-09-08）
+
+- 追加指摘も妥当。recursive CTEはrootのcurrentLimitを超える子孫もnoteIdsへ返すため、whereInIds(deletableNoteIds)の1ID/1bindも65535を超えうる。
+- DELETEを `id = ANY(:noteIds::varchar[])` の単一配列bindへ変更する。削除は分割せず1つのDELETE RETURNINGを維持し、候補生成はその実削除集合を使い、候補INSERT分割のatomicityも維持する。
+- 実DB境界テストはroot＋65536返信を再帰選択から通し、別のlocal返信を含む保護treeも同時に用意する。既定の短いstatement_timeoutでは大量DELETEの時間制限が先に発火したため、bind境界を確認する当該テストtransaction内だけLOCAL statement_timeoutを120秒へ拡張した。製品の時間予算・既存の複雑な木の処理制約は変更しない。
+- 検証完了: root＋65536返信の削除、保護tree残存、候補65536件分割、途中失敗rollbackを含む清掃processor全43件成功（`/tmp/issue18-delete-bind.log`）。backend全lint/typecheckおよび変更src/test eslint成功（`/tmp/issue18-delete-bind-lint.log`、`/tmp/issue18-delete-bind-eslint.log`）。

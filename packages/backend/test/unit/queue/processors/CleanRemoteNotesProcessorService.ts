@@ -193,6 +193,35 @@ describe('CleanRemoteNotesProcessorService', () => {
 		}
 	});
 
+	test('deletes more than 65535 descendants with one array parameter and preserves a protected tree', async () => {
+		const db = app.get<DataSource>(DI.db);
+		const expiredAt = Date.now() - ms('100d');
+		const root = await createNote({}, bob, expiredAt);
+		const protectedRoot = await createNote({}, bob, expiredAt);
+		const localReply = await createNote({ replyId: protectedRoot.id }, alice, expiredAt);
+		const childIds = Array.from({ length: 65536 }, () => idService.gen(expiredAt + 1));
+		await db.query(`INSERT INTO note (id, "userId", "userHost", visibility, "replyId", "replyUserId", "replyUserHost")
+			SELECT id, $2, $3, 'public', $4, $2, $3 FROM unnest($1::varchar[]) AS id`, [childIds, bob.id, bob.host, root.id]);
+		// This boundary fixture measures bind count, not the test DB's short SQL budget.
+		const transaction = db.transaction.bind(db);
+		const transactionSpy = vi.spyOn(db, 'transaction').mockImplementation(async (callback: any) => transaction(async manager => {
+			await manager.query("SET LOCAL statement_timeout = '120s'");
+			return callback(manager);
+		}));
+		let result;
+		try {
+			result = await service.process(createMockJob() as any);
+		} finally {
+			transactionSpy.mockRestore();
+		}
+		expect(result.deletedCount).toBe(childIds.length + 1);
+		expect(await notesRepository.findOneBy({ id: root.id })).toBeNull();
+		const [{ count }] = await db.query('SELECT count(*)::int AS count FROM note WHERE id = ANY($1::varchar[])', [childIds]);
+		expect(count).toBe(0);
+		expect(await notesRepository.findOneBy({ id: protectedRoot.id })).not.toBeNull();
+		expect(await notesRepository.findOneBy({ id: localReply.id })).not.toBeNull();
+	}, 120 * 1000);
+
 	for (const rejectLaterBatch of [false, true]) {
 		test(`large attachment result ${rejectLaterBatch ? 'rolls back all batches after a later failure' : 'crosses the PostgreSQL parameter boundary'}`, async () => {
 			const db = app.get<DataSource>(DI.db);

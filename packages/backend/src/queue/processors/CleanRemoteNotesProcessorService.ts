@@ -285,7 +285,7 @@ export class CleanRemoteNotesProcessorService {
 						// RETURNING records only rows this DELETE actually removed. Candidate insertion
 						// and note deletion either both commit or both roll back.
 						const deleted = await manager.createQueryBuilder().delete().from(this.notesRepository.target)
-							.whereInIds(deletableNoteIds).returning(['id', 'fileIds']).execute();
+							.where('id = ANY(:noteIds::varchar[])', { noteIds: deletableNoteIds }).returning(['id', 'fileIds']).execute();
 						const fileIds = [...new Set((deleted.raw as { fileIds: string[] }[]).flatMap(note => note.fileIds))];
 						// Recursive replies can exceed the root selection limit. Keep each
 						// INSERT well below PostgreSQL's bind parameter limit.
