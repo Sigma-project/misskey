@@ -309,3 +309,11 @@ migration5本の整理案やcursorの明示castなどは不具合根拠のない
 - 候補INSERTを1000件ごとに分割し、すべて既存の投稿DELETEと同一transaction内でawaitする。後続batchが失敗した場合は先行候補INSERTと投稿DELETEをまとめてrollbackする。削除条件、RETURNING限定、重複候補のorIgnoreは維持する。
 - 実DBで65536個のDrive IDsを持つ削除RETURNING集合を用意し、全65536候補が保存され投稿が削除される境界テストを追加。さらに先行batch成功後だけ例外を出すstatement triggerで2batch目を失敗させ、候補0件と投稿残存を確認した。入力は巨大RETURNING集合に焦点を当てたDB fixtureで、APIの1投稿添付上限を変更するものではない。
 - CleanRemoteNotesProcessorService全42件成功（`/tmp/issue18-bind-boundary.log`）。backend全lint/typecheck成功（`/tmp/issue18-bind-lint.log`）、変更src/test eslintはerror 0（既存同様のwarningあり、`/tmp/issue18-bind-eslint.log`）。製品schema/API定義変更なし、migration/SDK生成は不要。
+
+### PRの追加指摘: 期限切れキャッシュの統計（2026-09-08、検討中）
+
+PRコメント3950766259は妥当な経路を指摘している。既存deletePostProcessの期限切れ化は元のsizeを保持したisLink行へ更新し、元descriptorでchart減算を呼ぶ。後日のGCが同じsizeで減算すると二重計上になる。新規pure linkはsize=0でcountが加算されるため、全isLinkのchartを省く修正も正しくない。chart/eventの永続exactly-once化は引き続き対象外。
+
+Codexの比較案は、既存isLink+positive sizeから期限切れと判定する最小対応と、今後のzero-byte expiryも区別できる内部状態を追加して既存positive-size行は互換判定する対応。後者は最後のDELETE RETURNING行から通知用の最新状態を取り、storage用descriptorを独立保持する案。いずれも未確定で、ユーザー判断としては記録しない。
+
+Fable 5.1へ同要件・制約とコードを渡して設計比較を依頼したが、API 429 / `Fable 5.1 requires usage credits. Switch to another model to continue.` により実行されなかった（保存session50afb165-05be-4527-938d-e6c9383a7659、/tmp/issue18-fable-chart.json）。更新されたユーザーAGENTSの指定モデル規則に従い、Fableの利用再開を待つか代替モデルを許可するかを質問中。無断の代替設計や、Fableとの比較完了とは扱わない。統計側のコードは未変更。候補分割登録の修正・再レビューは独立に進める。
