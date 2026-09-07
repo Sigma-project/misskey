@@ -27,11 +27,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
 	if (referenceGuardDb?.isInitialized) {
-		try {
-			// Some suites start a second Nest application, whose test DataSource
-			// drops the tables. Test-only cleanup also tolerates those removed triggers.
-			await referenceGuardDb.query('DROP FUNCTION IF EXISTS remote_file_cleanup_guard() CASCADE');
-			await referenceGuardDb.query('DROP FUNCTION IF EXISTS remote_file_cleanup_json_ids(jsonb)');
-		} finally { await referenceGuardDb.destroy(); }
+		// The app can still be packing notifications. Dropping the guard here
+		// locks several live tables and can deadlock with those reads. The next
+		// beforeAll resets the app/schema before cleaning up the remaining functions.
+		await referenceGuardDb.destroy();
 	}
 });

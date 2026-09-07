@@ -379,3 +379,13 @@ Opus 5の実装レビューが利用上限で開始できなかったため、�
 既存の独立担当 `review18_final` は最終commit dcaee24cd3と検証結果を確認し必須指摘なしで収束した。ユーザー承認によりOpus 5を代替する新しい担当 `review18_substitute` も、確定設計・実装・chart入力・migration・API非露出・検証ログを読み取り確認し、必須指摘なしで収束した。両者は実装担当とは独立しており、代替担当がテストを再実行したとは扱わない。
 
 PRコメント3950766259（統計二重減算）と3950766265（bind上限）は妥当性を検証して修正・再レビューを完了。更新commitのpush後にCIとPR上の追加レビューを確認し、すべての必要CI成功・未解決指摘なし・マージ条件成立を確認してからマージする。
+
+### 最新CIのE2E終了時DDL競合と修正（2026-09-08）
+
+head a819944520のCIは36成功・backend E2E 1失敗。PostgreSQLログでProcess329のSQLが `DROP FUNCTION IF EXISTS remote_file_cleanup_guard() CASCADE`、相手がNoteEntityService.packのnote/user JOIN SELECTと確認できた（`/tmp/issue21-a819-backend-e2e-failure.log` 3324–3328行、SQLSTATE40P01）。単なる既存の不安定テストとして再試行せず、今回のsetup.afterAllが稼働中のテーブルへDDLを発行する問題として修正する。
+
+採用修正はafterAllを専用DB接続のdestroyのみにする。関数清掃は既存beforeAllのapp reset→initTestDb(false)によるschema再作成→残存関数DROP→guard再設置へ集約する。最後に関数が残っても隔離テストDB内で、次回runのbeforeAllで清掃される。afterAllへenv-resetを追加する案は新アプリ再起動も伴うため採用しない。製品コード・migrationは変更しない。
+
+同じ修正・再レビューサイクルとして、既存独立review18_finalとユーザー承認済み代替review18_substituteが差分・原因を照合し、両者とも全E2Eとlint成功条件で必須指摘なし。backend全型検査・lint成功、全E2Eを `/tmp/issue18-final-full-e2e.log` で実行中。最新コミットへのGitHub自動レビューは追加指摘なしで完了し、既存2threadは解決済みだったが、CI失敗のためマージは実行していない。
+
+修正後の全E2Eは30ファイル1332件成功、既存2skip/20todo、exit0（`/tmp/issue18-final-full-e2e.log`）。既存と同じVite終了待ちの警告は出るがテストプロセスは正常終了。backend全型検査・lintとsetup.e2e.tsの個別ESLintもexit0（`/tmp/issue18-final-cleanup-lint.log`、`/tmp/issue18-final-cleanup-eslint.log`）。両レビューの検証条件を満たしたため収束。API/schema/locale/画像変換/CI設定の追加変更はなく、SDK生成・migration追加は非該当。製品機能のCHANGELOG記載を維持し、diff check成功を確認して修正をcommit・pushする。
