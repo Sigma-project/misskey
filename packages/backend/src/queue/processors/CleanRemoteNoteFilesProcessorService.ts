@@ -4,7 +4,7 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import { DataSource, LessThanOrEqual, type EntityManager } from 'typeorm';
+import { DataSource, type EntityManager } from 'typeorm';
 import { DI } from '@/di-symbols.js';
 import { MiDriveFile } from '@/models/DriveFile.js';
 import { MiRemoteFileCleanup } from '@/models/RemoteFileCleanup.js';
@@ -119,23 +119,32 @@ export class CleanRemoteNoteFilesProcessorService {
 		const logger = this.queueLoggerService.logger.createSubLogger('clean-remote-note-files');
 		const start = Date.now();
 		const repository = this.db.getRepository(MiRemoteFileCleanup);
-		const candidates = await repository.find({
-			where: {
-				nextAttemptAt: LessThanOrEqual(new Date()),
-				...(!this.meta.enableRemoteNotesCleaning ? { state: 'deleting' as const } : {}),
-			},
-			order: { nextAttemptAt: 'ASC', fileId: 'ASC' }, take: 100,
-		});
+		const cutoff = new Date(start);
 		const stats = { deleted: 0, deferred: 0, skipped: 0, failed: 0 };
-		for (const candidate of candidates) {
-			if (Date.now() - start >= 60 * 1000) break;
-			try {
-				stats[await this.collect(candidate.fileId)]++;
-			} catch (err) {
-				stats.failed++;
-				logger.warn(`Remote file cleanup failed: ${candidate.fileId}`, err as Error);
+		let cursor = '';
+		// Bound memory per query, not successful collections per invocation. This
+		// lets fast storage drain more than 100 files within the same time budget.
+		// A keyset cursor also prevents locked files from busy-looping this run.
+		while (Date.now() - start < 60 * 1000) {
+			const query = repository.createQueryBuilder('candidate')
+				.where('candidate.nextAttemptAt <= :cutoff', { cutoff })
+				.andWhere('candidate.fileId > :cursor', { cursor })
+				.orderBy('candidate.fileId', 'ASC').take(100);
+			if (!this.meta.enableRemoteNotesCleaning) query.andWhere("candidate.state = 'deleting'");
+			const candidates = await query.getMany();
+			if (candidates.length === 0) break;
+			for (const candidate of candidates) {
+				if (Date.now() - start >= 60 * 1000) break;
+				cursor = candidate.fileId;
+				try {
+					stats[await this.collect(candidate.fileId)]++;
+				} catch (err) {
+					stats.failed++;
+					logger.warn(`Remote file cleanup failed: ${candidate.fileId}`, err as Error);
+				}
 			}
 		}
+
 		const remaining = await repository.count();
 		const oldest = await repository.findOne({ where: {}, order: { createdAt: 'ASC' } });
 		logger.info(`Remote file cleanup: ${JSON.stringify({ ...stats, remaining, oldest: oldest?.createdAt ?? null })}`);

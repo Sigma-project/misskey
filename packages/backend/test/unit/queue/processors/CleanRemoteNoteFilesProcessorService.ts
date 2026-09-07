@@ -175,6 +175,19 @@ describe('CleanRemoteNoteFilesProcessorService', () => {
 		expect(drive.deleteFileStorage).toHaveBeenCalledTimes(1);
 	});
 
+	test('drains multiple bounded batches without retrying skipped IDs in the same run', async () => {
+		const fileIds = Array.from({ length: 205 }, () => ids.gen());
+		owned.push(...fileIds);
+		await db.getRepository(MiRemoteFileCleanup).insert(fileIds.map(fileId => ({ fileId })));
+		// Keep every row due to model another worker retaining its advisory lock.
+		const collecting = vi.spyOn(service, 'collect').mockResolvedValue('skipped');
+		const result = await service.process();
+		expect(result.skipped).toBeGreaterThanOrEqual(205);
+		const called = collecting.mock.calls.map(([id]) => id);
+		expect(new Set(called).size).toBe(called.length);
+		for (const id of fileIds) expect(called).toContain(id);
+	});
+
 	test('internal storage awaits all artifacts and propagates errors other than ENOENT', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'misskey-cleanup-'));
 		try {

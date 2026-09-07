@@ -16,6 +16,7 @@ export class MiRemoteFileCleanup {
 	@Column('varchar', { length: 16, default: 'pending' })
 	public state: 'pending' | 'deleting';
 
+	@Index('IDX_REMOTE_FILE_CLEANUP_CREATED_AT')
 	@Column('timestamp with time zone', { default: () => 'CURRENT_TIMESTAMP' })
 	public createdAt: Date;
 
