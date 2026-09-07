@@ -156,3 +156,36 @@ Claude の設計・議論の実行にタイムアウトを設けず、時間を�
 ## 実装許可の記録
 
 **ユーザー判断（2026-09-07）**: 「それぞれ、実装を開始して」と明示された。対象は本書の確定方針（計画コミット `838335d0c7` 時点）であり、issue #18 の実装・検証・修正を開始する。理由の提示なし。過去の「実装未許可」は計画段階の履歴で、この許可により更新する。
+
+
+## 実装記録（2026-09-07）
+
+以下はエージェントの実装判断であり、追加の「ユーザー判断」ではない。対象・期限・有効化状態・投稿保護条件を変更していない。
+
+- `CleanRemoteNotesProcessorService` の既存バッチDELETEに transaction を加え、`DELETE RETURNING fileIds` で実際に削除された投稿の候補だけを独立表へ記録する。候補書込み失敗時は投稿削除も rollback する。
+- `remote_file_cleanup` はfile IDの一意キー、pending/deleting、試行回数、次回時刻、最終エラー、Drive descriptorを保持する。FKを設けず、通常削除経路でDrive行が消えてもdeletingのstorageキーを失わない。pending欠損は候補完了、deleting欠損はdescriptorによる物理回収を完了する。
+- 参照追加ガードはDBのBEFORE INSERT/UPDATE triggerで実装した。全7表の保存transactionで、新規追加IDを順にDrive行FOR SHARE→新しいREAD COMMITTED snapshotでdeleting確認する。アプリ個別経路のtransaction改修より網羅性を維持しやすく、AP・Page・直接Repository経路にも同じ規約が適用される。GCはDrive行FOR UPDATE後の新しいsnapshotで共有参照を再確認する。既存IDを維持する更新は追加参照として扱わない。
+- Page content/variablesのfileId/fileIdsは入れ子も抽出し所有者不問で保護する。任意文字列URLは対象外。既存欠損IDを維持する更新を許容する一方、新規欠損IDは拒否する。完了後にDrive行と候補が消えた古いIDへの参照を拒否するために必要で、他の各APIは既に存在チェックを持つ。Pageの任意JSON保存だけはこの整合性検査が新たに適用される。
+- 再利用のmd5/URI lookupはdeletingを除外する。既存動画processorはリモート所有ファイルを生成対象外にするため、その境界を回帰検証した。画像生成は新規Drive行のinsert前に完了し、その未公開IDはGC候補にならない。
+- 回収workerは5分間隔の既存system queueで起動し、最大100候補・開始から60秒のバッチ予算を持つ。Claudeの実行待機タイムアウトとは無関係の運用上のworker負荷上限である。参照中は候補を保持し、2分から最大24時間へbackoffする。無効時はpendingの新規削除確定を止め、deletingだけを再開する。
+- 同じfile IDの二重workerをsession advisory lockで排除し、短いDB transactionの間にstorage I/Oを行う。内部保存はawait/ENOENTのみ許容、object storageはNoSuchKeyのみ許容。S3のHTTP成功内のDeleteObjects.Errorsも検査する。全key回収後にDrive削除と候補完了を同transactionでcommitし、その実行だけが既存chart/eventをbest-effortで試す。
+- Page JSONの再帰抽出が候補ごとの全走査になるため、抽出式に単一GIN indexを追加した。既存Note/NoteDraftのGINを再利用する。Page 1000件×100候補の独立schema計測は25,222ms→107ms。Note1万件のEXPLAINで既存GIN、新Pageの実SQL EXPLAINで追加GINの利用を確認。100候補に対するChat10万行411ms、Gallery1万行152ms、Channel1万行134msの計測では、これらへの追加indexは今回の負荷予算に不要と判断した。これらはローカル測定で本番性能保証ではない。
+- Page indexは通常作成と環境変数でのCONCURRENTLY作成をサポートし、失敗時のinvalid indexを再作成できる。migrationのdownはindex→trigger/function→候補表の順に巻き戻す。
+
+### 検証の記録
+
+- 独立worktree `/tmp/misskey-issue18`、独立compose project `misskey-issue18-test`（DB54318/Redis56318）で検証。共有の運用DBは使用しない。migration検証はunit testのdropSchema/synchronizeと干渉しない別DB `test-misskey-migration18` を使用する。
+- 清掃・回収48件、guard/再利用/remote動画21件、共有参照/索引/負荷15件、Drive storage9件のテスト成功。清掃fixtureは本番同様にguard migrationを明示up/downする（TypeORM synchronizeだけではSQL trigger/functionを作らないため）。
+- 内部ファイルの実unlink/prefix削除とENOENT/ディレクトリエラー、S3原本/派生物/prefix/ページング/部分Errors/NoSuchKey、候補書込みrollback、storage失敗とdescriptor再試行、worker重複、通知失敗、参照の保留と解消後回収、全7表参照追加競合を確認した。
+- backend lint/typecheck成功。全体lintはfrontend-builderの既知OXC型不整合、および初回frontend依存workspace未buildを検出したため、後者の依存をbuildして再検証中。API定義・locale・画面コードは変更していないためAPI生成・locale追加・画面確認は対象外。手書きmigration、entity、TS新規ファイルへSPDXを追加した。
+- backend/依存workspaceのbuild-pre/buildはgitignored成果物のみで、tracked生成差分はない。手書き変更は機能一体としてコミットする。
+- 新規migrationの専用DB適用・往復・pending DDL検証とOpus5/独立subagentレビューは進行中。完了後に結果を追記する。
+
+
+### 実装時の最終検証（2026-09-07）
+
+- 関連6ファイルをまとめて94テスト成功。その後、最終DB確定失敗の再試行・pending欠損の2件を追加し、GC10件を再実行して全成功。異なるテスト総数96件。ログ: `/tmp/issue18-final-tests.log`、`/tmp/issue18-gc-final-tests.log`。テスト型チェックも成功。
+- 新規3 migrationを専用DBで全適用後、index→guard→候補表の順にdownして再適用し、`check-migrations` が `All migrations are clean.`（pending DDL 0件）で成功。ログ: `/tmp/issue18-migrations-up.log`、`/tmp/issue18-migration-down-{1,2,3}.log`、`/tmp/issue18-migration-reapply.log`、`/tmp/issue18-migration-check.log`。Page indexのCONCURRENTLYモードも独立schemaの往復試験に成功。
+- 全体 `pnpm lint` は13 workspace成功、frontend-builderはAGENTS記載の既知OXC型不整合。frontendは未buildのmisskey-bubble-game依存に起因した失敗を解消し、依存build後にfrontend lint成功。追加実装後のbackend lint/typecheck、テスト型チェック、変更ファイルESLint、diff空白チェックも成功。ログ: `/tmp/issue18-lint-escalated.log`、`/tmp/issue18-frontend-lint.log`、`/tmp/issue18-backend-lint-final.log`。
+- ローカルglobal libvips未設置のため、この独立worktreeの依存インストール時だけ `SHARP_IGNORE_GLOBAL_LIBVIPS=1` とbuild-from-source環境変数解除を使用した。JXLエンコードを検証するものではなく、今回のDB/収納削除テストは全成功。リポジトリのJXLビルド設定・画像生成挙動は変更していない。backend全unit suite・JXLの追加検証は本件で実行していない。
+- 実装差分・本書・検証結果をOpus5と独立subagentへ渡す準備が完了した。レビュー収束とPR/CI/マージは引き続き必要であり、実装コミットだけで完了扱いにしない。

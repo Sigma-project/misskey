@@ -59,6 +59,16 @@ function harness(useObjectStorage = false, objectStoragePrefix = 'media') {
 }
 
 describe('video transcoding worker', () => {
+	test('never generates artifacts for remote files, including old queued jobs', async () => {
+		const ctx = harness();
+		ctx.repository.findOneBy.mockResolvedValue({ id: 'remote', userHost: 'remote.example', type: 'video/mp4' } as MiDriveFile);
+		await expect(ctx.service.process(ctx.job)).resolves.toBe('skip: remote file');
+		expect(ctx.transcode.transcode).not.toHaveBeenCalled();
+		expect(ctx.storage.saveFromPath).not.toHaveBeenCalled();
+		expect(ctx.s3.upload).not.toHaveBeenCalled();
+		expect(ctx.repository.update).not.toHaveBeenCalled();
+	});
+
 	test.each([false, true])('removes partially uploaded artifacts (S3: %s)', async (s3) => {
 		const ctx = harness(s3);
 		const stored = new Set<string>();

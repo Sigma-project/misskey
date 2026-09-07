@@ -18,6 +18,10 @@ import {
 	MiMeta,
 } from '@/models/_.js';
 import { CleanRemoteNotesProcessorService } from '@/queue/processors/CleanRemoteNotesProcessorService.js';
+import { DataSource } from 'typeorm';
+import { MiRemoteFileCleanup } from '@/models/RemoteFileCleanup.js';
+import { MiDriveFile } from '@/models/DriveFile.js';
+import { RemoteFileReferenceGuard1788783564794 } from '../../../../migration/1788783564794-RemoteFileReferenceGuard.js';
 import { DI } from '@/di-symbols.js';
 import { IdService } from '@/core/IdService.js';
 import { QueueLoggerService } from '@/queue/QueueLoggerService.js';
@@ -110,6 +114,7 @@ describe('CleanRemoteNotesProcessorService', () => {
 			.overrideProvider(DI.meta).useFactory({ factory: () => meta })
 			.compile();
 
+		await new RemoteFileReferenceGuard1788783564794().up(app.get<DataSource>(DI.db));
 		service = app.get(CleanRemoteNotesProcessorService);
 		idService = app.get(IdService);
 		notesRepository = app.get(DI.notesRepository);
@@ -147,7 +152,42 @@ describe('CleanRemoteNotesProcessorService', () => {
 	}, 60 * 1000);
 
 	afterAll(async () => {
+		await new RemoteFileReferenceGuard1788783564794().down(app.get<DataSource>(DI.db));
 		await app.close();
+	});
+
+	test('records only deleted attachments atomically and preserves shared files', async () => {
+		const db = app.get<DataSource>(DI.db);
+		const id = idService.gen();
+		await db.getRepository(MiDriveFile).insert({ id, userHost: bob.host, md5: id, name: 'shared', type: 'image/jpeg', size: 1, storedInternal: false, isLink: true, url: 'https://remote/file' });
+		const expired = await createNote({ fileIds: [id] }, bob, Date.now() - ms('100d'));
+		const retained = await createNote({ fileIds: [id] }, carol);
+		await service.process(createMockJob() as any);
+		expect(await notesRepository.findOneBy({ id: expired.id })).toBeNull();
+		expect(await notesRepository.findOneBy({ id: retained.id })).not.toBeNull();
+		expect(await db.getRepository(MiRemoteFileCleanup).findOneBy({ fileId: id })).toMatchObject({ state: 'pending' });
+		await db.getRepository(MiRemoteFileCleanup).delete(id);
+		await notesRepository.delete(retained.id);
+		await db.getRepository(MiDriveFile).delete(id);
+	});
+
+	test('candidate failure rolls back the note deletion', async () => {
+		const db = app.get<DataSource>(DI.db);
+		const fileId = idService.gen();
+		await db.getRepository(MiDriveFile).insert({ id: fileId, userHost: bob.host, md5: fileId, name: 'rollback', type: 'image/jpeg', size: 1, storedInternal: false, isLink: true, url: 'https://remote/file' });
+		const note = await createNote({ fileIds: [fileId] }, bob, Date.now() - ms('100d'));
+		await db.query(`CREATE FUNCTION test_reject_cleanup_candidate() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'candidate write failed'; END $$`);
+		await db.query(`CREATE TRIGGER test_reject_cleanup_candidate BEFORE INSERT ON remote_file_cleanup FOR EACH ROW EXECUTE FUNCTION test_reject_cleanup_candidate()`);
+		try {
+			await expect(service.process(createMockJob() as any)).rejects.toThrow('candidate write failed');
+			expect(await notesRepository.findOneBy({ id: note.id })).not.toBeNull();
+			expect(await db.getRepository(MiRemoteFileCleanup).findOneBy({ fileId })).toBeNull();
+		} finally {
+			await db.query('DROP TRIGGER test_reject_cleanup_candidate ON remote_file_cleanup');
+			await db.query('DROP FUNCTION test_reject_cleanup_candidate()');
+			await notesRepository.delete(note.id);
+			await db.getRepository(MiDriveFile).delete(fileId);
+		}
 	});
 
 	describe('basic', () => {

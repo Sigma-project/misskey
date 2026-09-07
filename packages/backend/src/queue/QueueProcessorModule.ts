@@ -19,6 +19,7 @@ import { BakeBufferedReactionsProcessorService } from './processors/BakeBuffered
 import { CleanChartsProcessorService } from './processors/CleanChartsProcessorService.js';
 import { CleanProcessorService } from './processors/CleanProcessorService.js';
 import { CheckModeratorsActivityProcessorService } from './processors/CheckModeratorsActivityProcessorService.js';
+import { CleanRemoteNoteFilesProcessorService } from './processors/CleanRemoteNoteFilesProcessorService.js';
 import { CleanRemoteNotesProcessorService } from './processors/CleanRemoteNotesProcessorService.js';
 import { CleanRemoteFilesProcessorService } from './processors/CleanRemoteFilesProcessorService.js';
 import { DeleteAccountProcessorService } from './processors/DeleteAccountProcessorService.js';
@@ -88,6 +89,7 @@ import { VideoTranscodingProcessorService } from './processors/VideoTranscodingP
 		CheckExpiredMutingsProcessorService,
 		CheckModeratorsActivityProcessorService,
 		CleanRemoteNotesProcessorService,
+		CleanRemoteNoteFilesProcessorService,
 		VideoTranscodingProcessorService,
 		QueueProcessorService,
 	],

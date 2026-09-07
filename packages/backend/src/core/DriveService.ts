@@ -19,6 +19,7 @@ import type { MiRemoteUser, MiUser } from '@/models/User.js';
 import { MiDriveFile } from '@/models/DriveFile.js';
 import { IdService } from '@/core/IdService.js';
 import { isDuplicateKeyValueError } from '@/misc/is-duplicate-key-value-error.js';
+import { findReusableDriveFile } from '@/misc/find-reusable-drive-file.js';
 import { FILE_TYPE_BROWSERSAFE } from '@/const.js';
 import { IdentifiableError } from '@/misc/identifiable-error.js';
 import { contentDisposition } from '@/misc/content-disposition.js';
@@ -503,7 +504,7 @@ export class DriveService {
 
 		if (user && !force) {
 		// Check if there is a file with the same hash
-			const matched = await this.driveFilesRepository.findOneBy({
+			const matched = await findReusableDriveFile(this.driveFilesRepository, {
 				md5: info.md5,
 				userId: user.id,
 			});
@@ -662,10 +663,12 @@ export class DriveService {
 				if (isDuplicateKeyValueError(err)) {
 					this.registerLogger.info(`already registered ${file.uri}`);
 
-					file = await this.driveFilesRepository.findOneBy({
+					const existingFile = await findReusableDriveFile(this.driveFilesRepository, {
 						uri: file.uri!,
 						userId: user ? user.id : IsNull(),
-					}) as MiDriveFile;
+					});
+					if (!existingFile) throw err;
+					file = existingFile;
 				} else {
 					this.registerLogger.error(err as Error);
 					throw err;
@@ -902,6 +905,11 @@ export class DriveService {
 			await this.driveFilesRepository.delete(file.id);
 		}
 
+		await this.notifyFileDeleted(file, deleter);
+	}
+
+	@bindThis
+	public async notifyFileDeleted(file: MiDriveFile, deleter?: MiUser) {
 		this.driveChart.update(file, false);
 		if (file.userHost == null) {
 			// ローカルユーザーのみ
@@ -924,6 +932,25 @@ export class DriveService {
 				fileUserUsername: user?.username ?? null,
 				fileUserHost: user?.host ?? null,
 			});
+		}
+	}
+
+	/** Storage-only deletion for the durable remote-note cleanup worker. */
+	@bindThis
+	public async deleteFileStorage(file: MiDriveFile) {
+		const keys = [file.accessKey, file.thumbnailAccessKey, file.webpublicAccessKey]
+			.filter((key): key is string => key != null);
+		if (file.storedInternal) {
+			for (const key of keys) await this.internalStorageService.delAsync(key);
+		} else if (!file.isLink) {
+			for (const key of keys) await this.deleteObjectStorageFile(key);
+		}
+		if (file.transcodingPrefix != null) {
+			if (file.transcodingStoredInternal) {
+				await this.internalStorageService.delPrefixAsync(file.transcodingPrefix);
+			} else {
+				await this.s3Service.deletePrefix(this.meta, `${file.transcodingPrefix}/`);
+			}
 		}
 	}
 

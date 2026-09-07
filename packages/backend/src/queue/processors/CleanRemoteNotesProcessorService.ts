@@ -11,6 +11,7 @@ import type { MiMeta, MiNote, NotesRepository } from '@/models/_.js';
 import type Logger from '@/logger.js';
 import { bindThis } from '@/decorators.js';
 import { IdService } from '@/core/IdService.js';
+import { MiRemoteFileCleanup } from '@/models/RemoteFileCleanup.js';
 import { QueueLoggerService } from '../QueueLoggerService.js';
 import type * as Bull from 'bullmq';
 
@@ -280,7 +281,17 @@ export class CleanRemoteNotesProcessorService {
 			const deletableNoteIds = noteIds.filter(result => result.isRemovable).map(result => result.id);
 			if (deletableNoteIds.length > 0) {
 				try {
-					await this.notesRepository.delete(deletableNoteIds);
+					await this.db.transaction(async manager => {
+						// RETURNING records only rows this DELETE actually removed. Candidate insertion
+						// and note deletion either both commit or both roll back.
+						const deleted = await manager.createQueryBuilder().delete().from(this.notesRepository.target)
+							.whereInIds(deletableNoteIds).returning(['id', 'fileIds']).execute();
+						const fileIds = [...new Set((deleted.raw as { fileIds: string[] }[]).flatMap(note => note.fileIds))];
+						if (fileIds.length > 0) {
+							await manager.createQueryBuilder().insert().into(MiRemoteFileCleanup)
+								.values(fileIds.map(fileId => ({ fileId }))).orIgnore().execute();
+						}
+					});
 
 					for (const id of deletableNoteIds) {
 						const t = this.idService.parse(id).date.getTime();

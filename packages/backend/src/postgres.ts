@@ -28,6 +28,7 @@ import { MiChannelMuting } from '@/models/ChannelMuting.js';
 import { MiClip } from '@/models/Clip.js';
 import { MiClipNote } from '@/models/ClipNote.js';
 import { MiClipFavorite } from '@/models/ClipFavorite.js';
+import { MiRemoteFileCleanup } from '@/models/RemoteFileCleanup.js';
 import { MiDriveFile } from '@/models/DriveFile.js';
 import { MiDriveFolder } from '@/models/DriveFolder.js';
 import { MiEmoji } from '@/models/Emoji.js';
@@ -211,6 +212,7 @@ export const entities = [
 	MiGalleryPost,
 	MiGalleryLike,
 	MiDriveFile,
+	MiRemoteFileCleanup,
 	MiDriveFolder,
 	MiPoll,
 	MiPollVote,

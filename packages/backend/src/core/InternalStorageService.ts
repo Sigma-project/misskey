@@ -65,6 +65,25 @@ export class InternalStorageService {
 		fs.unlink(this.resolvePath(key), () => {});
 	}
 
+	/** Await durable cleanup; only a missing file is already successfully deleted. */
+	@bindThis
+	public async delAsync(key: string) {
+		const resolved = this.resolvePathWithinBase(key);
+		if (resolved == null || resolved === this.path) throw new Error('Invalid storage key');
+		try {
+			await fs.promises.unlink(resolved);
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+		}
+	}
+
+	@bindThis
+	public async delPrefixAsync(prefix: string) {
+		const resolved = this.resolvePathWithinBase(prefix);
+		if (resolved == null || resolved === this.path) throw new Error('Invalid storage prefix');
+		await fs.promises.rm(resolved, { recursive: true, force: true });
+	}
+
 	/**
 	 * プレフィックス（ディレクトリ）配下を再帰的に削除する。
 	 * トランスコード成果物のクリーンアップに用いる。

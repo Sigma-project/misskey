@@ -93,15 +93,21 @@ export class S3Service {
 
 			const objects = listed.Contents ?? [];
 			if (objects.length > 0) {
-				await client.send(new DeleteObjectsCommand({
+				const deleted = await client.send(new DeleteObjectsCommand({
 					Bucket: bucket,
 					Delete: {
 						Objects: objects.map(o => ({ Key: o.Key })),
 						Quiet: true,
 					},
 				}));
+				if (deleted.Errors?.some(error => error.Code !== 'NoSuchKey')) {
+					throw new Error(`Failed to delete transcoding objects: ${JSON.stringify(deleted.Errors)}`);
+				}
 			}
 
+			if (listed.IsTruncated && !listed.NextContinuationToken) {
+				throw new Error('Truncated object listing omitted its continuation token');
+			}
 			continuationToken = listed.IsTruncated ? listed.NextContinuationToken : undefined;
 		} while (continuationToken);
 	}
