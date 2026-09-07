@@ -8,12 +8,14 @@ COPY scripts/docker-build-libvips.sh /tmp/build-libvips.sh
 RUN sh /tmp/build-libvips.sh
 ENV PKG_CONFIG_PATH=/opt/vips/lib/pkgconfig
 ENV SHARP_FORCE_GLOBAL_LIBVIPS=1
+ENV PNPM_CONFIG_SIDE_EFFECTS_CACHE=false
 
 FROM --platform=$TARGETPLATFORM node:${NODE_VERSION} AS target-vips
 COPY scripts/docker-build-libvips.sh /tmp/build-libvips.sh
 RUN sh /tmp/build-libvips.sh
 ENV PKG_CONFIG_PATH=/opt/vips/lib/pkgconfig
 ENV SHARP_FORCE_GLOBAL_LIBVIPS=1
+ENV PNPM_CONFIG_SIDE_EFFECTS_CACHE=false
 
 # build assets & compile TypeScript
 FROM native-vips AS native-builder

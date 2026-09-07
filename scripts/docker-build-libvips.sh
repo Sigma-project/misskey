@@ -41,8 +41,12 @@ awk '$3 ~ /^\// { print $3 }' "$build_dir/ldd.txt" | sort -u > "$build_dir/libra
 while IFS= read -r library; do
 	case "$library" in /opt/vips/*) continue ;; esac
 	resolved=$(readlink -f "$library")
-	package=$(dpkg-query -S "$resolved" 2>/dev/null || dpkg-query -S "$library")
+	if ! package=$(dpkg-query -S "$resolved" 2>/dev/null || dpkg-query -S "$library"); then
+		printf 'Cannot determine runtime package for %s (%s)\n' "$library" "$resolved" >&2
+		exit 1
+	fi
 	printf '%s\n' "$package" | sed 's/: .*//'
-done < "$build_dir/libraries.txt" | sort -u > /opt/vips/runtime-packages.txt
+done < "$build_dir/libraries.txt" > "$build_dir/runtime-packages.txt"
+sort -u "$build_dir/runtime-packages.txt" > /opt/vips/runtime-packages.txt
 test -s /opt/vips/runtime-packages.txt
 PKG_CONFIG_PATH=/opt/vips/lib/pkgconfig pkg-config --modversion vips-cpp
