@@ -290,3 +290,9 @@ mise exec -- ../../node_modules/.bin/eslint --quiet test/unit/RemoteFileReferenc
 - backend全lint/typecheckと最終変更ファイルeslint成功（`/tmp/issue18-review2-lint.log`、`/tmp/issue18-review2-final-eslint.log`）。
 - N1のunit中断再開についても、2つの清掃processor fixtureでup前にtest限定の残存関数清掃を行うようにした。通常のunit終了時は厳密なdownでproduction rollbackを引き続き検証する。
 - 独立subagentは第2回修正差分も必須指摘なし。Opus 5は第3回再レビュー中。
+
+### 正式レビューの収束
+
+Opus 5は保存セッション `4e3a4bea-aa1b-4b95-a773-9c8f7b8e4aac` で3回レビューし、第3回で第1/2回の指摘をすべて修正済みまたは根拠により撤回として収束を明示した。独立subagentも全差分、tuple/indexの追加修正、最後のunit fixture前処理まで再確認し、必須指摘なしと回答した。unitの両清掃fixtureに中断後の関数清掃があることも確認済み。レビューの回数を理由に指摘を残していない。
+
+migration5本の整理案やcursorの明示castなどは不具合根拠のない任意提案として現状を維持する。各機能の修正・検証履歴をコミット単位で残す。PR/CIと最新masterの統合後確認を引き続き実施する。
