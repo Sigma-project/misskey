@@ -88,8 +88,6 @@ describe('FileServerService', () => {
 	let remoteTextUrl: string;
 	let remoteFlatPngUrl: string;
 	const storedPaths: string[] = [];
-	let createdFallbackAssets = false;
-	let fallbackAssetsDir = '';
 
 	function writeInternalFile(key: string) {
 		const dest = internalStorageService.resolvePath(key);
@@ -210,13 +208,6 @@ describe('FileServerService', () => {
 		remoteSvgUrl = remoteServerInfo.svgUrl;
 		remoteTextUrl = remoteServerInfo.textUrl;
 		remoteFlatPngUrl = remoteServerInfo.flatPngUrl;
-
-		fallbackAssetsDir = path.resolve('src/server/file/assets');
-		if (!fs.existsSync(fallbackAssetsDir)) {
-			fs.mkdirSync(fallbackAssetsDir, { recursive: true });
-			fs.copyFileSync(dummyPath, path.join(fallbackAssetsDir, 'dummy.png'));
-			createdFallbackAssets = true;
-		}
 	});
 
 	afterEach(async () => {
