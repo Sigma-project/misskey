@@ -193,6 +193,43 @@ describe('CleanRemoteNotesProcessorService', () => {
 		}
 	});
 
+	for (const rejectLaterBatch of [false, true]) {
+		test(`large attachment result ${rejectLaterBatch ? 'rolls back all batches after a later failure' : 'crosses the PostgreSQL parameter boundary'}`, async () => {
+			const db = app.get<DataSource>(DI.db);
+			const fileIds = Array.from({ length: 65536 }, () => idService.gen());
+			// One array parameter keeps fixture creation independent of INSERT batching.
+			await db.query(`INSERT INTO drive_file (id, "userHost", md5, name, type, size, url, "isLink", "storedInternal")
+				SELECT id, 'remote.example', id, 'boundary', 'image/jpeg', 1, 'https://remote/file', true, false FROM unnest($1::varchar[]) AS id`, [fileIds]);
+			const note = await createNote({ fileIds }, bob, Date.now() - ms('100d'));
+			if (rejectLaterBatch) {
+				// Fail only once a prior INSERT has succeeded, regardless of batch size.
+				await db.query(`CREATE FUNCTION test_reject_later_cleanup_batch() RETURNS trigger LANGUAGE plpgsql AS $$
+					BEGIN IF EXISTS (SELECT 1 FROM remote_file_cleanup WHERE "fileId" = '${fileIds[0]}') THEN
+						RAISE EXCEPTION 'later candidate batch failed'; END IF; RETURN NULL; END $$`);
+				await db.query('CREATE TRIGGER test_reject_later_cleanup_batch BEFORE INSERT ON remote_file_cleanup FOR EACH STATEMENT EXECUTE FUNCTION test_reject_later_cleanup_batch()');
+			}
+			try {
+				if (rejectLaterBatch) {
+					await expect(service.process(createMockJob() as any)).rejects.toThrow('later candidate batch failed');
+					expect(await notesRepository.findOneBy({ id: note.id })).not.toBeNull();
+				} else {
+					await service.process(createMockJob() as any);
+					expect(await notesRepository.findOneBy({ id: note.id })).toBeNull();
+				}
+				const [{ count }] = await db.query('SELECT count(*)::int AS count FROM remote_file_cleanup WHERE "fileId" = ANY($1::varchar[])', [fileIds]);
+				expect(count).toBe(rejectLaterBatch ? 0 : fileIds.length);
+			} finally {
+				if (rejectLaterBatch) {
+					await db.query('DROP TRIGGER test_reject_later_cleanup_batch ON remote_file_cleanup');
+					await db.query('DROP FUNCTION test_reject_later_cleanup_batch()');
+				}
+				await notesRepository.delete(note.id);
+				await db.query('DELETE FROM remote_file_cleanup WHERE "fileId" = ANY($1::varchar[])', [fileIds]);
+				await db.query('DELETE FROM drive_file WHERE id = ANY($1::varchar[])', [fileIds]);
+			}
+		}, 60 * 1000);
+	}
+
 	describe('basic', () => {
 		test('should skip cleaning when enableRemoteNotesCleaning is false', async () => {
 			meta.enableRemoteNotesCleaning = false;

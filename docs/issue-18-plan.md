@@ -302,3 +302,10 @@ migration5本の整理案やcursorの明示castなどは不具合根拠のない
 #15のPR #20が全39 CI成功後にmasterへマージされたため、そのcommit `7f52e05f34a38c3350ac0e702092590e16369843` を統合する。競合は計画Docsのadd/addとCHANGELOGの追記のみで、各issueの最新計画・判断・検証履歴と両changelog行を保持した。製品コードの競合・手動改変はない。統合後の画像判定/清掃processorテストと型検査を行う。
 
 統合後のFileInfo44件＋清掃processor51件、計95件が同一JXL環境で成功した（`/tmp/issue18-integrated-tests.log`）。backendの全型検査とESLintもexit0（`/tmp/issue18-integrated-lint.log`）。Opusの保存セッションでの追加統合確認と独立subagentの確認はいずれも新たな必須指摘なし、収束維持。以降のPR/CI・マージ結果は[GitHub issue #18](https://github.com/Sigma-project/misskey/issues/18)に紐づくPRで確認できる。
+
+### PR #21 レビュー: 候補INSERTのbind上限（2026-09-08）
+
+- Codexコメント3950766265は妥当。再帰reply treeからの削除RETURNING集合はroot選択のcurrentLimitだけでは制限できず、全unique fileIdを1回のINSERTへ渡すとPostgreSQLのbind parameter上限を超えうる。
+- 候補INSERTを1000件ごとに分割し、すべて既存の投稿DELETEと同一transaction内でawaitする。後続batchが失敗した場合は先行候補INSERTと投稿DELETEをまとめてrollbackする。削除条件、RETURNING限定、重複候補のorIgnoreは維持する。
+- 実DBで65536個のDrive IDsを持つ削除RETURNING集合を用意し、全65536候補が保存され投稿が削除される境界テストを追加。さらに先行batch成功後だけ例外を出すstatement triggerで2batch目を失敗させ、候補0件と投稿残存を確認した。入力は巨大RETURNING集合に焦点を当てたDB fixtureで、APIの1投稿添付上限を変更するものではない。
+- CleanRemoteNotesProcessorService全42件成功（`/tmp/issue18-bind-boundary.log`）。backend全lint/typecheck成功（`/tmp/issue18-bind-lint.log`）、変更src/test eslintはerror 0（既存同様のwarningあり、`/tmp/issue18-bind-eslint.log`）。製品schema/API定義変更なし、migration/SDK生成は不要。

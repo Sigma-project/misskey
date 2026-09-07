@@ -287,9 +287,12 @@ export class CleanRemoteNotesProcessorService {
 						const deleted = await manager.createQueryBuilder().delete().from(this.notesRepository.target)
 							.whereInIds(deletableNoteIds).returning(['id', 'fileIds']).execute();
 						const fileIds = [...new Set((deleted.raw as { fileIds: string[] }[]).flatMap(note => note.fileIds))];
-						if (fileIds.length > 0) {
+						// Recursive replies can exceed the root selection limit. Keep each
+						// INSERT well below PostgreSQL's bind parameter limit.
+						const candidateBatchSize = 1000;
+						for (let offset = 0; offset < fileIds.length; offset += candidateBatchSize) {
 							await manager.createQueryBuilder().insert().into(MiRemoteFileCleanup)
-								.values(fileIds.map(fileId => ({ fileId }))).orIgnore().execute();
+								.values(fileIds.slice(offset, offset + candidateBatchSize).map(fileId => ({ fileId }))).orIgnore().execute();
 						}
 					});
 
