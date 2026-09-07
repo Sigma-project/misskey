@@ -324,3 +324,9 @@ Fable 5.1へ同要件・制約とコードを渡して設計比較を依頼し�
 - DELETEを `id = ANY(:noteIds::varchar[])` の単一配列bindへ変更する。削除は分割せず1つのDELETE RETURNINGを維持し、候補生成はその実削除集合を使い、候補INSERT分割のatomicityも維持する。
 - 実DB境界テストはroot＋65536返信を再帰選択から通し、別のlocal返信を含む保護treeも同時に用意する。既定の短いstatement_timeoutでは大量DELETEの時間制限が先に発火したため、bind境界を確認する当該テストtransaction内だけLOCAL statement_timeoutを120秒へ拡張した。製品の時間予算・既存の複雑な木の処理制約は変更しない。
 - 検証完了: root＋65536返信の削除、保護tree残存、候補65536件分割、途中失敗rollbackを含む清掃processor全43件成功（`/tmp/issue18-delete-bind.log`）。backend全lint/typecheckおよび変更src/test eslint成功（`/tmp/issue18-delete-bind-lint.log`、`/tmp/issue18-delete-bind-eslint.log`）。
+
+### bind上限対策の再レビュー収束（2026-09-08）
+
+Opus 5は同一保存セッションで投稿DELETEの単一配列bind、65536返信の実DB結果、候補INSERTの分割・rollbackを再確認し、未解決の妥当な必須指摘なしと回答した（`/tmp/issue18-opus-delete-bind.json`）。独立subagentも同差分を確認して必須指摘なし、全43テスト成功の条件を満たした。bind指摘3950766265への対応は収束。統計指摘3950766259は未解決であり、指定設計モデルの利用再開または代替のユーザー判断を引き続き待つ。
+
+仕上げ確認: 今回の追加修正は製品schema/API定義、新規ソース、locale、画像変換、CI設定を変更しないため、追加migration・SDK生成・SPDX・locale対応は非該当。既存CHANGELOGの機能記載を維持し、backend lint/typecheck・境界を含む43テスト・diff checkは成功。更新後CIはpush後に確認する。
