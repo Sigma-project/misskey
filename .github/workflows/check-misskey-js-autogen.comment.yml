@@ -33,25 +33,41 @@ jobs:
         id: load-result
         if: steps.download-result.outcome == 'success'
         run: |
-          pr_number="$(cat result/pr-number)"
           changes="$(cat result/changes)"
 
-          case "$pr_number" in
-            ''|*[!0-9]*) echo "invalid pr number"; exit 1;;
-          esac
           case "$changes" in
             true|false) ;;
             *) echo "invalid result"; exit 1;;
           esac
 
-          echo "pr-number=$pr_number" >> "$GITHUB_OUTPUT"
           echo "changes=$changes" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve current pull request
+        id: resolve-pr
+        if: steps.load-result.outcome == 'success'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const run = context.payload.workflow_run;
+            const candidates = (run.pull_requests ?? []).filter(pr => pr.head.sha === run.head_sha);
+            if (candidates.length !== 1) {
+              core.notice('Skipping autogen: no unique pull request is associated with this run.');
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: candidates[0].number });
+            if (pr.state !== 'open' || pr.head.sha !== run.head_sha || pr.head.repo?.id !== run.head_repository?.id) {
+              core.notice('Skipping stale autogen report.');
+              return;
+            }
+            core.setOutput('is-current', 'true');
+            core.setOutput('pr-number', String(pr.number));
+
       - name: send message
-        if: steps.load-result.outputs.changes == 'true'
+        if: steps.resolve-pr.outputs.is-current == 'true' && steps.load-result.outputs.changes == 'true'
         uses: thollander/actions-comment-pull-request@v3
         with:
-          pr-number: ${{ steps.load-result.outputs.pr-number }}
+          pr-number: ${{ steps.resolve-pr.outputs.pr-number }}
           comment-tag: check-misskey-js-autogen
           message: |-
             Thank you for sending us a great Pull Request! 👍
@@ -63,10 +79,10 @@ jobs:
             ```
 
       - name: send message
-        if: steps.load-result.outputs.changes == 'false'
+        if: steps.resolve-pr.outputs.is-current == 'true' && steps.load-result.outputs.changes == 'false'
         uses: thollander/actions-comment-pull-request@v3
         with:
-          pr-number: ${{ steps.load-result.outputs.pr-number }}
+          pr-number: ${{ steps.resolve-pr.outputs.pr-number }}
           comment-tag: check-misskey-js-autogen
           mode: delete
           message: "Thank you!"
