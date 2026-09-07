@@ -127,6 +127,7 @@ jobs:
     - name: Upload base heap snapshot
       uses: actions/upload-artifact@v7
       with:
+        name: base-heap-snapshot.heapsnapshot
         path: base-heap-snapshot.heapsnapshot
         archive: false
         if-no-files-found: error
@@ -134,6 +135,7 @@ jobs:
     - name: Upload head heap snapshot
       uses: actions/upload-artifact@v7
       with:
+        name: head-heap-snapshot.heapsnapshot
         path: head-heap-snapshot.heapsnapshot
         archive: false
         if-no-files-found: error
