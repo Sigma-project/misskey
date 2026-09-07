@@ -87,15 +87,16 @@ export class CleanRemoteNoteFilesProcessorService {
 			// A crash or partial failure leaves all keys in the deleting descriptor.
 			await this.driveService.deleteFileStorage(descriptor);
 			const deleted = await runner.manager.transaction(async manager => {
-				const result = await manager.delete(MiDriveFile, fileId);
+				const result = await manager.createQueryBuilder().delete().from(MiDriveFile)
+					.where('id = :fileId', { fileId }).returning('*').execute();
 				await manager.delete(MiRemoteFileCleanup, fileId);
-				return result.affected === 1;
+				return (result.raw as MiDriveFile[])[0];
 			});
 			if (deleted) {
 				// Same best-effort chart/stream semantics as normal Drive deletion; never
 				// repeat storage deletion because a notification failed after commit.
 				try {
-					await this.driveService.notifyFileDeleted(descriptor);
+					await this.driveService.notifyFileDeleted(deleted);
 				} catch (err) {
 					this.queueLoggerService.logger.warn(`Remote file cleanup notification failed: ${fileId}`, err as Error);
 				}

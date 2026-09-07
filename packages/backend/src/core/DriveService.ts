@@ -890,8 +890,9 @@ export class DriveService {
 	private async deletePostProcess(file: MiDriveFile, isExpired = false, deleter?: MiUser) {
 		// リモートファイル期限切れ削除後は直リンクにする
 		if (isExpired && file.userHost !== null && file.uri != null) {
-			await this.driveFilesRepository.update(file.id, {
+			const result = await this.driveFilesRepository.update({ id: file.id, isLink: false }, {
 				isLink: true,
+				isRemoteCacheExpired: true,
 				url: file.uri,
 				thumbnailUrl: null,
 				webpublicUrl: null,
@@ -901,6 +902,8 @@ export class DriveService {
 				thumbnailAccessKey: 'thumbnail-' + randomUUID(),
 				webpublicAccessKey: 'webpublic-' + randomUUID(),
 			});
+			// Only the successful transition accounts from the old cached state.
+			if (result.affected !== 1) return;
 		} else {
 			await this.driveFilesRepository.delete(file.id);
 		}
@@ -910,13 +913,19 @@ export class DriveService {
 
 	@bindThis
 	public async notifyFileDeleted(file: MiDriveFile, deleter?: MiUser) {
-		this.driveChart.update(file, false);
-		if (file.userHost == null) {
-			// ローカルユーザーのみ
-			this.perUserDriveChart.update(file, false);
-		} else {
-			if (this.meta.enableChartsForFederatedInstances) {
-				this.instanceChart.updateDrive(file, false);
+		// Expiry already accounts for cached files, including empty files. Legacy
+		// positive-size links predate the marker; pure links are created with size 0.
+		const alreadyUncounted = file.userHost !== null
+			&& (file.isRemoteCacheExpired || (file.isLink && file.size > 0));
+		if (!alreadyUncounted) {
+			this.driveChart.update(file, false);
+			if (file.userHost == null) {
+				// ローカルユーザーのみ
+				this.perUserDriveChart.update(file, false);
+			} else {
+				if (this.meta.enableChartsForFederatedInstances) {
+					this.instanceChart.updateDrive(file, false);
+				}
 			}
 		}
 

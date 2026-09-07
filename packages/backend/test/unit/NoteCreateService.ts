@@ -105,6 +105,7 @@ describe('NoteCreateService', () => {
 			maybeSensitive: false,
 			maybePorn: false,
 			isLink: false,
+			isRemoteCacheExpired: false,
 			requestHeaders: null,
 			requestIp: null,
 		};

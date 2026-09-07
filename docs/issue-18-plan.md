@@ -359,3 +359,13 @@ Opus 5は前提の誤りを訂正し、0byteは正常入力であり既知二重
 限界: 適用前に期限切れした0byte linkは既存DBだけではpure linkと区別不能で、過去のchart値の修復は保証しない。これらが必ず90日以内に消えるとは限らず、参照保護や設定停止で残りうる。今後同一行を再キャッシュする経路が追加される場合はmarkerを解除する。chart/eventのcommit後送達は既存best-effortのまま。
 
 検証: 正常cached・pure link・legacy expired・0byte expiry→GC・localのchart/eventを確認し、GC T1後expiry→T2、GC完了後stale expiry、重複expiry、deleting再開を実DBで検証する。migration up/down/upとpending DDL 0、backend lint/typecheck、関連unit/E2E、Opus 5と独立subagentの再レビューを行う。今回の修正は既存の明示実装許可とPR指摘修正の範囲で開始する。
+
+### 統計修正の実装と検証（2026-09-08）
+
+- 合意した案Bを実装。DriveFile内部isRemoteCacheExpiredはdefault false、expiryのcached→link更新と同時にtrue。巨大backfillは行わない。expiryはidとisLink=falseをUPDATE条件にし、affected1のときだけ旧状態で通知する。最終GCはDELETE RETURNINGの実削除行を通知に使い、永続descriptorはstorage再試行専用に維持する。
+- remoteのmarker true/legacy positive-size linkはchartだけ省略し、実削除時のstream・moderationは保持する。重複expiry/削除済み行のstale expiryは実状態遷移が無いので通知せず、proxy keyも再更新しない。通常Drive削除全体のexactly-once化は行っていない。
+- 新規RemoteCacheExpiry実DBテスト9件: 0/100byte expiry→GC、cached/purelink/legacy/local、GC T1→expiry→T2、GC完了→stale expiry、重複expiry、deleting状態から再開を検証。chart/eventと保存keyの使用をassertする。storageはmock、参照ガードは既存専用テストに委ね、expiry update/GC両transactionは実DBを使う。pack結果に内部markerがないことも確認した。
+- 関連unitはDriveService11+GC11+新規9=31件成功（`/tmp/issue18-chart-tests.log`）。pack非露出assert追加後の新規9+NoteCreateService7も成功（`/tmp/issue18-chart-final-tests.log`）。既存型付きMiDriveFile fixtureにdefault falseを補った。
+- migration6のup/down/up成功、pending DDL0（`/tmp/issue18-chart-migrations.log`）。backend全lint/typecheck、変更test eslint成功（`/tmp/issue18-chart-lint.log`、`/tmp/issue18-chart-test-eslint.log`）。手書きmigrationのみで、trackedコード生成物はない。API meta/paramDef/resを変更しないためSDK生成は非該当。
+- 独立subagentは必須指摘なし。Opus 5実装レビューはsession limitにより開始できず、rootが利用再開待ちまたは代替についてユーザー判断を確認中。この段階ではレビュー完了扱いにしない。
+- 統計修正後のDrive/remote-file-cleanup関連HTTP E2E 7件成功（`/tmp/issue18-chart-e2e.log`）。

@@ -178,6 +178,11 @@ export class MiDriveFile {
 	})
 	public isLink: boolean;
 
+	// Internal cache-to-link expiry state; chart delivery remains best-effort.
+	// A future path that re-caches this same row must reset the marker.
+	@Column('boolean', { default: false })
+	public isRemoteCacheExpired: boolean;
+
 	@Column('jsonb', {
 		default: {},
 		nullable: true,
