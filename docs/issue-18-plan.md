@@ -330,3 +330,32 @@ Fable 5.1へ同要件・制約とコードを渡して設計比較を依頼し�
 Opus 5は同一保存セッションで投稿DELETEの単一配列bind、65536返信の実DB結果、候補INSERTの分割・rollbackを再確認し、未解決の妥当な必須指摘なしと回答した（`/tmp/issue18-opus-delete-bind.json`）。独立subagentも同差分を確認して必須指摘なし、全43テスト成功の条件を満たした。bind指摘3950766265への対応は収束。統計指摘3950766259は未解決であり、指定設計モデルの利用再開または代替のユーザー判断を引き続き待つ。
 
 仕上げ確認: 今回の追加修正は製品schema/API定義、新規ソース、locale、画像変換、CI設定を変更しないため、追加migration・SDK生成・SPDX・locale対応は非該当。既存CHANGELOGの機能記載を維持し、backend lint/typecheck・境界を含む43テスト・diff checkは成功。更新後CIはpush後に確認する。
+
+### ユーザー判断: 設計比較モデルの代替（2026-09-08）
+
+Fable 5.1が利用できないため、今回の統計二重減算修正の設計比較をOpus 5へ代替する提案に、ユーザーが「いいよ」と明示承認した。理由の提示はない。既存の実装許可の範囲で設計比較・議論、実装、検証、Opus 5とsubagentの再レビューを継続する。
+
+### 統計修正の設計比較・第1回（2026-09-08）
+
+代替承認済みOpus 5（保存session `27392427-32dd-49b0-b024-cc9bb7c6495f`）は、案A（isLinkかつpositive sizeの互換判定）を推奨し、案B（内部expiry状態boolean追加）のschemaコストを指摘した。双方とも保存descriptorではなく最終DELETE RETURNING行による判断と、chartだけ省略してstream/eventを維持する点に一致した。
+
+Codexは案Aだけでは合法な0byte cached fileの期限切れ後削除が必ず再減算されるため、今後の行を明示状態で区別する案Bを推奨した。既存FileInfoの空ファイルunit、detectTypeのoctet-stream分岐、Drive.saveのsize保存に最低サイズ制約がないことを根拠にした。Opusが挙げた「6本目migrationを避ける確定制約」は存在しないため訂正を求めた。best-effortは非永続通知の障害窓を残す意味であり、正常入力の既知二重計上を恒久的に残す根拠にはしない。旧0byte expiryは既存DBだけでは復元不能という限界を区別する。
+
+競合の追加根拠: 既存expiryはGC advisory lockに参加せず、候補列挙後にstale fileを受け取り得る。GC第一transaction後にexpiryが完了する順序は最終DELETE RETURNINGで判定できるが、GC DELETE後に遅いexpiryがUPDATE affected0のままnotifyする順序は残る。expiry UPDATEをisLink=falseの実変更行だけに限定し、affected1のとき旧cached状態から通知する局所修正を第2回議論へ提示した。全Drive削除のexactly-once基盤は引き続き対象外。
+
+### 統計修正の第2回議論・採用方針（2026-09-08）
+
+Opus 5は前提の誤りを訂正し、0byteは正常入力であり既知二重減算をbest-effortとして残すべきではないと同意した。案Bを採用し、expiryの条件付きUPDATEも必須という結論で一致した。第2回の出力ファイルは/tmp容量不足で空になったが、保存済みClaudeセッションのassistant回答から全文を回収した（`/tmp/issue18-chart-design2-recovered.txt`）。比較・議論は実行済みで、代替モデルはユーザー許可済みのOpus 5。
+
+採用する実装:
+
+1. DriveFileに内部boolean `isRemoteCacheExpired`（default false）と新規migrationを追加。expiryによりcached→linkへ遷移した行でtrueにする。API pack/schemaには追加しない。大量既存行UPDATEは行わない。
+2. expiry UPDATEは `{ id, isLink: false }` を条件にし、affected 1のときだけ旧cached行で通知する。これによりGC削除後のstale expiryと重複expiryでの再減算・無意味なproxy key更新を防ぐ。既存行の実DELETE全体をexactly-once化する変更は行わない。
+3. notifyFileDeletedはremoteかつmarker true、またはlegacy isLinkかつsize>0の場合にchartだけ省略。stream/event・moderation処理は維持。pure link（size0、marker false）と通常cached/local fileは従来どおり減算する。
+4. GC最終transactionのDELETE RETURNINGから得た実削除行で通知判定する。永続descriptorは引き続きstorage再試行用に保持し、古い状態で会計判断しない。
+
+代替案の採否: chart countの意味を行数に変更しexpiryでsizeを0へ書き換える案は既存APIのファイルサイズ情報を失いchart基盤を変更するため不採用。expiryへGC advisory lockを広げる案は条件付きUPDATEより結合と並行性への影響が大きく不採用。単純な再SELECTはTOCTOUを残すため不採用。
+
+限界: 適用前に期限切れした0byte linkは既存DBだけではpure linkと区別不能で、過去のchart値の修復は保証しない。これらが必ず90日以内に消えるとは限らず、参照保護や設定停止で残りうる。今後同一行を再キャッシュする経路が追加される場合はmarkerを解除する。chart/eventのcommit後送達は既存best-effortのまま。
+
+検証: 正常cached・pure link・legacy expired・0byte expiry→GC・localのchart/eventを確認し、GC T1後expiry→T2、GC完了後stale expiry、重複expiry、deleting再開を実DBで検証する。migration up/down/upとpending DDL 0、backend lint/typecheck、関連unit/E2E、Opus 5と独立subagentの再レビューを行う。今回の修正は既存の明示実装許可とPR指摘修正の範囲で開始する。
