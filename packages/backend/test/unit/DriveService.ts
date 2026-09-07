@@ -6,6 +6,15 @@
 process.env.NODE_ENV = 'test';
 
 import { afterAll, beforeAll, beforeEach, describe, test, expect, vi } from 'vitest';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { DataSource } from 'typeorm';
+import { DI } from '@/di-symbols.js';
+import { IdService } from '@/core/IdService.js';
+import { MiUser } from '@/models/User.js';
+import { MiUserProfile } from '@/models/UserProfile.js';
+import { MiRemoteFileCleanup } from '@/models/RemoteFileCleanup.js';
 import { Test } from '@nestjs/testing';
 import {
 	DeleteObjectCommand,
@@ -22,7 +31,7 @@ import { DriveService } from '@/core/DriveService.js';
 import { InternalStorageService } from '@/core/InternalStorageService.js';
 import { S3Service } from '@/core/S3Service.js';
 import { MiMeta } from '@/models/Meta.js';
-import type { MiDriveFile } from '@/models/DriveFile.js';
+import { MiDriveFile } from '@/models/DriveFile.js';
 import { CoreModule } from '@/core/CoreModule.js';
 import type { TestingModule } from '@nestjs/testing';
 
@@ -46,6 +55,33 @@ describe('DriveService', () => {
 
 	afterAll(async () => {
 		await app.close();
+	});
+
+	test('re-registers the same remote URI and content while the old row is deleting', async () => {
+		const db = app.get<DataSource>(DI.db);
+		const id = app.get(IdService).gen();
+		const user = { id, host: 'remote.example' };
+		await db.getRepository(MiUser).insert({ ...user, username: id, usernameLower: id });
+		await db.getRepository(MiUserProfile).insert({ userId: id });
+		const directory = await mkdtemp(join(tmpdir(), 'remote-reimport-'));
+		const path = join(directory, 'file.txt');
+		await writeFile(path, 'The same remote attachment');
+		const uri = 'https://remote.example/file.txt';
+		try {
+			const first = await driveService.addFile({ user, path, isLink: true, uri, url: uri, name: 'file.txt' });
+			await db.getRepository(MiRemoteFileCleanup).insert({ fileId: first.id, state: 'deleting', descriptor: first, lastError: 'storage unavailable' });
+			const second = await driveService.addFile({ user, path, isLink: true, uri, url: uri, name: 'file.txt' });
+			expect(second.id).not.toBe(first.id);
+			expect(second.uri).toBe(first.uri);
+			expect(second.md5).toBe(first.md5);
+			expect(second.accessKey).not.toBe(first.accessKey);
+			expect(await db.getRepository(MiDriveFile).countBy({ uri, userId: id })).toBe(2);
+			await db.getRepository(MiRemoteFileCleanup).delete(first.id);
+		} finally {
+			await db.getRepository(MiDriveFile).delete({ userId: id });
+			await db.getRepository(MiUser).delete(id);
+			await rm(directory, { recursive: true, force: true });
+		}
 	});
 
 	describe('durable cleanup storage', () => {

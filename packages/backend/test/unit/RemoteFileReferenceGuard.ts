@@ -4,6 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { setTimeout } from 'node:timers/promises';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { DataSource, EntitySchema } from 'typeorm';
@@ -41,6 +42,7 @@ describe('remote file reference guards', () => {
 		for (const table of ['note', 'note_draft', 'gallery_post', 'user', 'channel', 'chat_message', 'page']) {
 			await writer.query(`CREATE TABLE "${table}" (id text PRIMARY KEY, "fileIds" text[], "fileId" text, "avatarId" text, "bannerId" text, "eyeCatchingImageId" text, content jsonb, variables jsonb)`);
 		}
+		await writer.query('ALTER TABLE note ADD COLUMN reactions jsonb, ADD COLUMN text text');
 		await migration.up(writer);
 	});
 
@@ -73,6 +75,32 @@ describe('remote file reference guards', () => {
 		expect(row.ids).toEqual(['file', 'other']);
 	});
 
+	test('measures attachment-free note writes with unrelated payload', async () => {
+		const reactions = JSON.stringify(Object.fromEntries(Array.from({ length: 32 }, (_, index) => [`emoji-${index}`, index])));
+		const started = performance.now();
+		await writer.query(`INSERT INTO note (id, "fileIds", reactions, text)
+			SELECT i::text, ARRAY[]::text[], $1::jsonb, repeat('note content ', 300) FROM generate_series(1, 5000) i`, [reactions]);
+		console.info(`Attachment-free note insert: 5000 rows, ${Math.round(performance.now() - started)} ms`);
+		expect((await writer.query('SELECT count(*)::integer AS count FROM note'))[0].count).toBe(5000);
+	});
+
+	test('skips the trigger for attachment-free inserts and unchanged reference updates', async () => {
+		const [insert] = await writer.query(`EXPLAIN (ANALYZE, FORMAT JSON)
+			INSERT INTO note (id, "fileIds") VALUES ('empty', ARRAY[]::text[])`);
+		expect(insert['QUERY PLAN'][0].Triggers ?? []).toEqual([]);
+		await writer.query('INSERT INTO note (id, "fileIds") VALUES (\'attached\', ARRAY[\'file\'])');
+		const [update] = await writer.query(`EXPLAIN (ANALYZE, FORMAT JSON)
+			UPDATE note SET "fileIds" = "fileIds" WHERE id = 'attached'`);
+		expect(update['QUERY PLAN'][0].Triggers ?? []).toEqual([]);
+	});
+
+	test('does not interpret unrelated Note JSON as file references', async () => {
+		await writer.query(`INSERT INTO note (id, "fileIds", reactions)
+			VALUES ('attached', ARRAY['file'], '{"fileId":"not-a-file"}'::jsonb)`);
+		await writer.query('UPDATE note SET "fileIds" = ARRAY[\'other\'] WHERE id = \'attached\'');
+		expect((await writer.query('SELECT "fileIds" FROM note WHERE id = \'attached\''))[0].fileIds).toEqual(['other']);
+	});
+
 	test.each([
 		['note', '"fileIds"', 'ARRAY[\'file\']'],
 		['note_draft', '"fileIds"', 'ARRAY[\'file\']'],
@@ -87,9 +115,9 @@ describe('remote file reference guards', () => {
 	])('protects %s %s on insert and update', async (table, column, value) => {
 		await writer.query(`INSERT INTO "${table}" (id, ${column}) VALUES ('existing', ${value})`);
 		await writer.query('UPDATE remote_file_cleanup SET state = \'deleting\'');
-		await expect(writer.query(`INSERT INTO "${table}" (id, ${column}) VALUES ('new', ${value})`)).rejects.toMatchObject({ code: '23503' });
+		await expect(writer.query(`INSERT INTO "${table}" (id, ${column}) VALUES ('new', ${value})`)).rejects.toMatchObject({ code: '23503', constraint: 'remote_file_cleanup_reference_guard' });
 		await writer.query(`INSERT INTO "${table}" (id) VALUES ('empty')`);
-		await expect(writer.query(`UPDATE "${table}" SET ${column} = ${value} WHERE id = 'empty'`)).rejects.toMatchObject({ code: '23503' });
+		await expect(writer.query(`UPDATE "${table}" SET ${column} = ${value} WHERE id = 'empty'`)).rejects.toMatchObject({ code: '23503', constraint: 'remote_file_cleanup_reference_guard' });
 		// Unrelated edits of existing references do not introduce new references.
 		await writer.query(`UPDATE "${table}" SET ${column} = ${value} WHERE id = 'existing'`);
 	});
@@ -97,7 +125,7 @@ describe('remote file reference guards', () => {
 	test('rejects references after the collector has removed both rows', async () => {
 		await writer.query('DELETE FROM drive_file');
 		await writer.query('DELETE FROM remote_file_cleanup');
-		await expect(writer.query('INSERT INTO note (id, "fileIds") VALUES (\'new\', ARRAY[\'file\'])')).rejects.toMatchObject({ code: '23503' });
+		await expect(writer.query('INSERT INTO note (id, "fileIds") VALUES (\'new\', ARRAY[\'file\'])')).rejects.toMatchObject({ code: '23503', constraint: 'remote_file_cleanup_reference_guard' });
 	});
 
 	test.each(['md5', 'uri'] as const)('does not reuse a deleting file by %s', async (column) => {
@@ -128,7 +156,7 @@ describe('remote file reference guards', () => {
 			await collector.query('SELECT id FROM drive_file WHERE id = \'file\' FOR UPDATE');
 			const [{ pid }] = await writer.query('SELECT pg_backend_pid() AS pid');
 			const inserting = writer.query('INSERT INTO note (id, "fileIds") VALUES (\'new\', ARRAY[\'file\'])');
-			const rejected = expect(inserting).rejects.toMatchObject({ code: '23503' });
+			const rejected = expect(inserting).rejects.toMatchObject({ code: '23503', constraint: 'remote_file_cleanup_reference_guard' });
 			await waitUntilBlocked(pid);
 			await collector.query('UPDATE remote_file_cleanup SET state = \'deleting\'');
 			await collector.commitTransaction();

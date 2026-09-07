@@ -3,7 +3,7 @@
 - 対象: [Sigma-project/misskey #18](https://github.com/Sigma-project/misskey/issues/18)
 - 作成日: 2026-09-07
 - 計画基準: `origin/master` `2b006ee066e6360957a0c37c42569a23273c35ff`。作業ツリーの旧 HEAD からの関連差分も確認した。
-- 状態: Codex と Fable 5.1 の独立設計・5往復の差異議論を完了。ユーザーによる対象変更を反映した計画案。実装は未許可。コード変更・migration 実行・データ削除は行っていない。
+- 状態（2026-09-07更新）: ユーザーの明示許可を得て実装済み。Opus5の第1回指摘を検証・修正し、unit全体とmigration往復を検証済み。API e2e全体と第2回レビューを実行中。下記の計画時点の記述は当時の検討履歴であり、現在の実装・許可状態は「実装許可の記録」以降を参照する。
 - [計画一覧](issue-plans.md)
 
 ## 要件・制約
@@ -127,7 +127,7 @@ mise exec -- pnpm --filter backend check-migrations
 
 backend テストと migration 検査の前に `compose.test.yml` の DB/Redis と `.config/test.yml` を準備し、新規 migration をテスト DB へ適用する。API を変えた場合は `mise exec -- pnpm build-misskey-js-with-types` を実行する。実装時の追加テストファイル名に応じて絞り込みを更新する。JXL/libvips の fork 前提と既知 lint 例外は最新 `AGENTS.md` に従い、今回起因の失敗と分ける。
 
-本ターンは計画文書だけのためテスト・ビルド・migration は未実行。`shipping-misskey-change` スキルを確認し、コード/API/entity/locale/画面の変更がないため対応する検証・生成・SPDX・CHANGELOG 更新は非該当。画像変換や CI の不変条件を変更していない。
+初回計画作成ターン時点（履歴）は計画文書だけのためテスト・ビルド・migration は未実行。`shipping-misskey-change` スキルを確認し、コード/API/entity/locale/画面の変更がないため対応する検証・生成・SPDX・CHANGELOG 更新は非該当。画像変換や CI の不変条件を変更していない。
 
 ## 未決事項・ユーザー判断
 
@@ -151,7 +151,7 @@ Claude の設計・議論の実行にタイムアウトを設けず、時間を�
 
 ## 実装許可
 
-実装許可は未取得。対象計画への合意だけでは実装を始めない。許可取得後、対象計画の版・許可日・許可範囲をここへ追記する。
+2026-09-07に明示的な実装許可を取得済み。対象計画の版・許可日・許可範囲は直下の「実装許可の記録」に記載する。計画段階では許可取得まで実装を待機した。
 
 ## 実装許可の記録
 
@@ -187,5 +187,88 @@ Claude の設計・議論の実行にタイムアウトを設けず、時間を�
 - 関連6ファイルをまとめて94テスト成功。その後、最終DB確定失敗の再試行・pending欠損の2件を追加し、GC10件を再実行して全成功。異なるテスト総数96件。ログ: `/tmp/issue18-final-tests.log`、`/tmp/issue18-gc-final-tests.log`。テスト型チェックも成功。
 - 新規3 migrationを専用DBで全適用後、index→guard→候補表の順にdownして再適用し、`check-migrations` が `All migrations are clean.`（pending DDL 0件）で成功。ログ: `/tmp/issue18-migrations-up.log`、`/tmp/issue18-migration-down-{1,2,3}.log`、`/tmp/issue18-migration-reapply.log`、`/tmp/issue18-migration-check.log`。Page indexのCONCURRENTLYモードも独立schemaの往復試験に成功。
 - 全体 `pnpm lint` は13 workspace成功、frontend-builderはAGENTS記載の既知OXC型不整合。frontendは未buildのmisskey-bubble-game依存に起因した失敗を解消し、依存build後にfrontend lint成功。追加実装後のbackend lint/typecheck、テスト型チェック、変更ファイルESLint、diff空白チェックも成功。ログ: `/tmp/issue18-lint-escalated.log`、`/tmp/issue18-frontend-lint.log`、`/tmp/issue18-backend-lint-final.log`。
-- ローカルglobal libvips未設置のため、この独立worktreeの依存インストール時だけ `SHARP_IGNORE_GLOBAL_LIBVIPS=1` とbuild-from-source環境変数解除を使用した。JXLエンコードを検証するものではなく、今回のDB/収納削除テストは全成功。リポジトリのJXLビルド設定・画像生成挙動は変更していない。backend全unit suite・JXLの追加検証は本件で実行していない。
+- ローカルglobal libvips未設置のため、この独立worktreeの依存インストール時だけ `SHARP_IGNORE_GLOBAL_LIBVIPS=1` とbuild-from-source環境変数解除を使用した。JXLエンコードを検証するものではなく、今回のDB/収納削除テストは全成功。リポジトリのJXLビルド設定・画像生成挙動は変更していない。初回実装検証時点ではbackend全unit suite・JXLの追加検証は未実行だった（その後、レビュー修正の広域検証でJXL対応環境の全unitを実行。後節参照）。
 - 実装差分・本書・検証結果をOpus5と独立subagentへ渡す準備が完了した。レビュー収束とPR/CI/マージは引き続き必要であり、実装コミットだけで完了扱いにしない。
+
+
+## Opus 5 第1回レビューへの検証・対応（参照ガード担当、2026-09-07）
+
+対象回答: `/tmp/issue18-opus-review1.json`（`result` 全文読了）。本節はエージェントによる評価・実装判断であり、ユーザー判断ではない。
+
+### P1-4: 全行JSON化と添付なし書込み負荷 — 妥当、修正済み
+
+旧ガードは `to_jsonb(NEW)` と再帰CTEを全対象INSERTで実行し、添付なしNoteでもtext・reactions等を走査していた。独立schemaで5000件、各text3600文字・reactions32項目・空fileIdsを一文INSERTして793msを計測した。
+
+修正後は対象列を直接読む。Note/Draft/GalleryはfileIds配列、UserはavatarId/bannerId、ChannelはbannerId、ChatはfileId、Pageだけcontent/variablesの既知IDを再帰抽出する。全行JSON化の補助関数は廃止した。INSERTには非空WHEN、UPDATEには非空と対象列のIS DISTINCT FROMを組み合わせたWHENを設定し、空参照や同じ値への更新ではトリガー関数そのものを呼ばない。既存missing参照を維持する更新の許容、ID順FOR SHARE、新snapshotのdeleting確認は維持する。nullableな旧参照配列はNULL要素を除去してからANY比較し、新規参照がSQL NULLで判定から抜けないようにした。
+
+同じ5000件の挿入は修正後64ms、再実行58ms。EXPLAIN ANALYZEでも添付なしINSERTと同じfileIdsのUPDATEにTriggersが無いことをassert。無関係なNote JSONを参照として扱わないテストを追加し、全7表の新規/更新/消滅/競合テストも通過した。時間値は最小テスト構成の測定であり、本番環境の保証ではない。
+
+### P1-1: Draft/Userの索引欠落という指摘 — 当該3経路は不採用、検証補完
+
+マイグレーション用DB（`.config/migration18.yml` 接続先）を読み取り、`pg_indexes`から以下の実在を確認した。
+
+- `note_draft`: `IDX_NOTE_DRAFT_FILE_IDS`、`USING gin ("fileIds")`。既存 `1736686850345-createNoteDraft.js` が作成。
+- `user`: `REL_58f5c71eaab331645112cf8cfa`、avatarIdのunique btree。
+- `user`: `REL_afc64b53f8db3707ceb34eb28e`、bannerIdのunique btree。
+
+Userの2索引は既存@OneToOne由来。通常のschema同期用test.yml DBにはsynchronize:falseのDraft GINは無く、これを本番migrationの欠落と混同しない。
+
+独立schemaに上記と同じ索引を設定し、実hasReferencesが発行したSQLをそのままEXPLAIN ANALYZEした。Draft1万件の命中/不一致とも既存GINを使用。User10万件のavatar命中/banner命中/不一致はいずれも2つの既存unique索引を使用した。100個の不一致候補に対する測定はDraft119ms、User96ms（投入時間除外）。不要な重複索引は追加しない。
+
+他の未索引経路も再測定: Chat10万件380ms、Gallery1万件159ms、Channel1万件127ms（各100候補、投入時間除外）。Pageは新索引利用で1000件98ms。これらはwarmな最小schemaの観測値であり、無制限の本番規模の性能保証ではない。現状の具体的な30秒timeoutの再現根拠はなく、候補数/運用観測は主担当の別指摘対応と合わせて評価する。
+
+### P2-8: ガードエラー識別 — 主担当のAPI修正へ対応済み
+
+missing/deletingの両RAISEに `CONSTRAINT = 'remote_file_cleanup_reference_guard'` を追加し、SQLSTATE23503は維持した。ガード拒否のテスト全てでcodeとconstraintの両方をassertした。通常のFKエラーとの識別とAPI側400への変換は主担当の担当範囲。
+
+### P2-9: IMMUTABLE抽出関数と式索引の依存 — 妥当、コメント追加済み
+
+`remote_file_cleanup_json_ids` の直前に、将来の抽出規則変更では同じmigration内で `IDX_PAGE_REMOTE_FILE_REFERENCES` を再構築し、回収処理再開より前に完了させる必要を明記した。PostgreSQLは関数の実装変更だけでは既存index値を無効化しない。今回の関数の抽出意味自体は変更していない。
+
+`down()`には、Page索引migrationを先に戻す必要があり、CASCADEで誤った順序を隠さないことを明記した。独立schemaテストはindex down→index up→index down→guard downの順で実行している。AGENTS.mdの共通規則へ追記するなら「remote_file_cleanup_json_idsの抽出規則変更時はPage式索引を同migrationで再構築し、rollbackは索引を先に戻す」を推奨（本担当の編集許可ファイル外なので未変更）。
+
+### 検証
+
+backend cwd:
+
+```sh
+mise exec -- ./node_modules/.bin/vitest run --config vitest.config.unit.ts RemoteFileReferenceGuard RemoteFileReferenceQueries --reporter verbose --disableConsoleIntercept
+mise exec -- ../../node_modules/.bin/eslint --quiet test/unit/RemoteFileReferenceGuard.ts test/unit/RemoteFileReferenceQueries.ts
+```
+
+36 tests passed、2 files passed、13.80s（2026-09-07 22:01:38 UTC開始）。ESLintとgit diff --checkは別途完了を確認。主担当の全体lint/migration/e2e/レビューと機能単位コミットに含める。
+
+
+### 第1回レビューの残項目への評価・対応（主担当）
+
+以下もエージェントの判断であり、ユーザー判断ではない。
+
+- **P1-2（派生物キー書込み）: 提案を不採用。** 現在の画像生成はDriveService.addFile/saveで新規Drive行insertより前に完了する。既存行へ新規storage成果物を書き戻す経路はVideoTranscodingProcessorServiceだけで、リモート所有ファイルは処理開始時にskipし回帰テストでも確認した。DriveService.updateは名前/フォルダ/説明/センシティブ等でstorage keyを更新しない。期限切れリンク化はNULL化ではなくrandomUUIDのproxy用キーへ更新するため、提案された非NULLキー変更禁止は既存の期限切れ処理を誤って拒否する。将来リモート向け派生生成を追加する際は状態規約への参加が必要だが、現存しない書込み経路を理由に禁止トリガーを追加しない。
+- **P1-3（linkに非NULLキーがあるならS3削除）: 前提が誤りのため不採用。** DriveService.addFileのlink作成も期限切れリンク化も、実体のないproxy解決用accessKey/thumbnailAccessKey/webpublicAccessKeyをrandomUUIDで設定する。純linkのキーはNULLという指摘は実コードと異なる。isLink条件を外すと、object storage未設定の通常linkを架空キーのS3削除に送って永続失敗させる。原本はstoredInternal/非linkの実保存情報に従い、独立したtranscodingPrefixはlink状態にかかわらず回収する。期限切れ化前にdeleting確定した場合は、descriptorに旧実キーが残る。過去の別削除経路で既に失われた未知のstorage keyを一般孤児として探すことは計画の範囲外。
+- **P1-5（同URI登録のunique衝突）: 前提が誤りのため不採用、再現検証を追加。** 初期migrationのdrive_file.uriは非uniqueのIDX_e5848eac4940934e23dbc17581で、現MiDriveFileも@Index()のみ。uri/userIdの複合uniqueは存在しない。削除中旧行を保持したまま、同URI・同ownerの新ID挿入とPageへの新規参照がHTTP e2eで成功した。DriveService.addFileの実再登録経路でも同bytes/URIの削除中行から別ID/別proxy keyで作成できる回帰検証を追加した。したがってDrive行の早期削除やURI切離しは必要なく、全物理回収後にDrive行を削除する確定計画を維持する。
+- **P2-6（最古候補の走査）: 改善。** createdAtに索引を追加して最古候補LIMIT 1を支える。候補件数countは正確な未回収件数の観測に必要なので維持する。候補表は本PRの新規表で、追加indexの通常作成は既存巨大表のlockを発生させない。
+- **P2-7（テスト並列衝突）: 不採用、根拠を確認。** vitest.config.tsはmaxWorkers:1でunit/e2e共通設定へ継承される。ファイルの実行は同時に1つで、各public schema fixtureのup/downは並列にならない。専用schemaのguard/queryテストは引き続き独立。DB自体も他issue/運用DBから分離した。e2e共通setupは本番のguardを明示設置し、独自にDBを再初期化するmove suiteでも再設置する。
+- **P2-8（APIの500）: 妥当、修正。** ガードに固有constraint名を付け、ApiCallServiceは当該23503だけを400 NO_SUCH_FILEへ変換する。既存FK違反全般をmissing扱いにしない。Page JSONの新規missing/deletingをHTTPで検証し、通常FKはINTERNAL_ERRORのままであることも確認する。meta/paramDef/resやendpoint登録は変更していないためSDK生成対象の差分はない。API reviewer指示書の対象はendpoints配下と定義されており、本件にはその変更がない。
+- **P2-10（transcoding削除重複）: 現在の不具合ではないため不採用。** 既存cleanupTranscodingArtifactsと厳密版は、同じ保存済みprefixを内部ではdirectory、S3ではprefix末尾slashとして使う。動画保存のstoredPrefixもこの規約と一致している。GCで通常削除のエラー握り潰しを再利用しないことは確定計画に沿い、将来のdriftという仮定だけで通常削除全体の待機/失敗挙動を変更しない。双方の保存先判定をstorageテストで検証した。
+- **P2-11（100件/回の上限）: 妥当、修正。** 100件はメモリ上限の1バッチとし、同じ60秒予算内でfileIdのkeysetを進めて次バッチを取得する。これにより1日28,800件という人工的な上限をなくし、locked候補を同じ実行で繰り返さない。205件のdue候補について複数バッチを走査し、一度ずつ試すテストを追加した。物理I/O待機はなお処理量の上限であり、無制限の入力に追従する保証はしない。既存system queueを長時間占有する最大60分化や無条件並列I/Oは採らず、固定の負荷予算と観測を維持する。
+- **P3:** 候補欠損等のdeferred分類は「この試行で物理回収していない」の意味で既存ログを維持する。stackはlogger.warn(err)に記録し、永続lastErrorは要約を保持する。migrationインデントは既存ファイル群でも混在し動作問題はない。投稿削除統計は元の実装どおり選択集合を数えるもので、今回の候補はRETURNING実削除集合だけから作る。統計の既存競合挙動変更は本件に広げない。
+- **要検証1:** MiUserの構造化ファイル参照はavatarId/bannerId。Ad/Meta/Emoji/AvatarDecorationはURL文字列を保存し、構造化fileId参照は無い。任意URLを参照として解析することは計画対象外。
+- **要検証4/5:** 初回実装でmigration up/down/upとpending DDL0件、maxWorkers1を確認済。今回の変更後も再検証する。
+
+`MISSKEY_MIGRATION_CREATE_INDEX_CONCURRENTLY=1` は既存ormconfigのmigrationsTransactionMode=eachと組み合わせ、Page式索引をtransaction外で作成する運用オプション。既定は通常のtransaction内作成。本件のJSON抽出関数の意味を将来変える場合は、同migrationでPage式索引も再構築してからGCを再開し、rollbackではindexを先に戻す。
+
+### 第1回レビュー修正の検証進捗
+
+- guard/query36 tests成功、修正後backend lint/typecheck成功。
+- HTTP e2eのmissing/deletingエラー・sameURI新ID参照2件成功。通常FK対比のテストを追加して広域検証へ含める。
+- JXL有効libvips 8.18.3のimage `misskey-issue15-vips:dev` にffmpegを追加した検証専用image `misskey-issue18-test:dev` を作成。独立worktreeのsharpをこのimage内でsource buildし、fullunit/e2eの画像前提を満たして広域検証を進行中。成果物はnode_modules/builtのみでtracked生成差分なし。
+
+
+### 第1回レビュー修正の広域検証結果（追記）
+
+- JXL有効libvips/ffmpeg imageでbackend unit全67ファイルを実行。66ファイル・830件成功、SearchServiceのMeilisearch接続だけが検証用サービス未起動によりECONNREFUSEDだった。CI同versionのMeilisearch v1.49.0を専用containerで57712に起動し、SearchService32件＋UserSearchService9件のfocused再実行が全成功。合算して異なる846件成功、元からskip指定のDriveFileEntity/DriveFolderEntity各1件だけが未実行。ログは`/tmp/issue18-review-fullunit.log`と`/tmp/issue18-review-search-unit.log`。今回の失敗をコード起因と混同しない。
+- レビューで求めた実DriveService.addFileの同URI/同bytes再登録テストも成功。storage障害相当のdeleting descriptorが残る間に、同ownerの別IDと別proxy keyが生成される。
+- 4件の新規migrationを専用DBでup→4件down→upし、最新版entityに対するpending DDL0件を確認。`/tmp/issue18-review-migrations.log`末尾はAll migrations are clean。
+- レビュー修正後のbackend全typecheck/eslintも成功（`/tmp/issue18-review-final-lint.log`）。API e2e全体はguardを有効にして実行中であり、結果は後続に記録する。
+
+- 全E2E初回は1262件成功したが、synalio/abuse-reportが第2Nest appを起動してtest DataSourceのdropSchemaを再実行し、guardが消えるため共通teardownが失敗した。残った関数により後続suite setupも失敗した。moveと同様、当該suiteのqueue起動直後にguardを再設置し、共通setup/teardownはtest限定のIF EXISTS付き関数清掃でschema再初期化・中断残骸に対応した。本番migrationの厳密なdownは変更していない。fixture eslint成功後、全E2Eを再実行中（`/tmp/issue18-review-fulle2e2.log`）。

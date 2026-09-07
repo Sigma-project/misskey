@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 
+import { RemoteFileReferenceGuard1788783564794 } from '../../migration/1788783564794-RemoteFileReferenceGuard.js';
 import { INestApplicationContext } from '@nestjs/common';
 
 process.env.NODE_ENV = 'test';
@@ -41,6 +42,11 @@ describe('Account Move', () => {
 		const config = loadConfig();
 		url = new URL(config.url);
 		const connection = await initTestDb(false);
+		// This suite starts a second Nest app and resets its schema after the
+		// common setup. Restore the production reference guard for this reset.
+		await connection.query('DROP FUNCTION IF EXISTS remote_file_cleanup_guard() CASCADE');
+		await connection.query('DROP FUNCTION IF EXISTS remote_file_cleanup_json_ids(jsonb)');
+		await new RemoteFileReferenceGuard1788783564794().up(connection);
 		root = await signup({ username: 'root' });
 		alice = await signup({ username: 'alice' });
 		bob = await signup({ username: 'bob' });

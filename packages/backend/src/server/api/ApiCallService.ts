@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as stream from 'node:stream/promises';
 import { Inject, Injectable } from '@nestjs/common';
+import { QueryFailedError } from 'typeorm';
 import { DI } from '@/di-symbols.js';
 import { getIpHash } from '@/misc/get-ip-hash.js';
 import type { MiLocalUser, MiUser } from '@/models/User.js';
@@ -106,6 +107,17 @@ export class ApiCallService implements OnApplicationShutdown {
 	}
 
 	#onExecError(ep: IEndpoint, data: any, err: Error, userId?: MiUser['id']): void {
+		if (err instanceof QueryFailedError && err.driverError?.code === '23503'
+			&& err.driverError?.constraint === 'remote_file_cleanup_reference_guard') {
+			// A file can disappear after an endpoint's initial ownership/existence
+			// check. Treat this specific reference guard like a missing attachment,
+			// while preserving diagnostics for unrelated foreign-key failures.
+			throw new ApiError({
+				message: 'No such file.',
+				code: 'NO_SUCH_FILE',
+				id: '4c573a66-2147-4ab1-a878-8f7dcd69b586',
+			});
+		}
 		if (err instanceof ApiError || err instanceof AuthenticationError) {
 			throw err;
 		} else {

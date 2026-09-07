@@ -42,6 +42,11 @@ describe('remote cleanup reference queries', () => {
 		}
 		// Match the existing production migration; do not add another Note index.
 		await runner.query('CREATE INDEX "IDX_NOTE_FILE_IDS" ON note USING gin ("fileIds")');
+		// Existing migration 1736686850345 and User's OneToOne relations.
+		// Schema synchronization alone omits the synchronize:false Draft GIN.
+		await runner.query('CREATE INDEX "IDX_NOTE_DRAFT_FILE_IDS" ON note_draft USING gin ("fileIds")');
+		await runner.query('CREATE UNIQUE INDEX "REL_58f5c71eaab331645112cf8cfa" ON "user" ("avatarId")');
+		await runner.query('CREATE UNIQUE INDEX "REL_afc64b53f8db3707ceb34eb28e" ON "user" ("bannerId")');
 		await migration.up(runner);
 		await indexMigration.up(runner);
 		service = new CleanRemoteNoteFilesProcessorService(db, {} as MiMeta, {} as DriveService, {} as QueueLoggerService);
@@ -101,6 +106,35 @@ describe('remote cleanup reference queries', () => {
 		await runner.query('ANALYZE note');
 		expect(await explainLookup('file-9876')).toContain('IDX_NOTE_FILE_IDS');
 		await expect(service.hasReferences(runner.manager, 'file-9876')).resolves.toBe(true);
+	});
+
+	test('uses the existing Draft GIN index for reference misses and hits', async () => {
+		await runner.query('INSERT INTO drive_file SELECT \'draft-file-\' || i FROM generate_series(1, 10000) i');
+		await runner.query('INSERT INTO note_draft (id, "fileIds") SELECT id, ARRAY[id]::varchar[] FROM drive_file');
+		await runner.query('ANALYZE note_draft');
+		expect(await explainLookup('missing-candidate')).toContain('IDX_NOTE_DRAFT_FILE_IDS');
+		expect(await explainLookup('draft-file-9876')).toContain('IDX_NOTE_DRAFT_FILE_IDS');
+		await expect(service.hasReferences(runner.manager, 'draft-file-9876')).resolves.toBe(true);
+		const started = performance.now();
+		for (let index = 0; index < 100; index++) await service.hasReferences(runner.manager, `candidate-${index}`);
+		console.info(`Draft indexed: 100 candidates, 10000 rows, ${Math.round(performance.now() - started)} ms`);
+	});
+
+	test('uses both existing User unique indexes at 100000 users', async () => {
+		await runner.query(`INSERT INTO drive_file SELECT prefix || i FROM generate_series(1, 100000) i CROSS JOIN unnest(ARRAY['avatar-', 'banner-']) prefix`);
+		await runner.query(`INSERT INTO "user" (id, "avatarId", "bannerId")
+			SELECT i::text, 'avatar-' || i, 'banner-' || i FROM generate_series(1, 100000) i`);
+		await runner.query('ANALYZE "user"');
+		for (const fileId of ['missing-candidate', 'avatar-9876', 'banner-9876']) {
+			const plan = await explainLookup(fileId);
+			expect(plan).toContain('REL_58f5c71eaab331645112cf8cfa');
+			expect(plan).toContain('REL_afc64b53f8db3707ceb34eb28e');
+		}
+		await expect(service.hasReferences(runner.manager, 'avatar-9876')).resolves.toBe(true);
+		await expect(service.hasReferences(runner.manager, 'banner-9876')).resolves.toBe(true);
+		const started = performance.now();
+		for (let index = 0; index < 100; index++) await service.hasReferences(runner.manager, `candidate-${index}`);
+		console.info(`User indexed: 100 candidates, 100000 rows, ${Math.round(performance.now() - started)} ms`);
 	});
 
 	test('measures a worker batch against nested Page references', async () => {
