@@ -8,6 +8,7 @@ import type { MiDriveFile } from './DriveFile.js';
 import { id } from './util/id.js';
 
 @Entity('remote_file_cleanup')
+@Index('IDX_REMOTE_FILE_CLEANUP_NEXT_ATTEMPT', ['nextAttemptAt', 'fileId'])
 export class MiRemoteFileCleanup {
 	// No foreign key: storage descriptors must survive other Drive deletion paths.
 	@PrimaryColumn({ ...id(), primaryKeyConstraintName: 'PK_REMOTE_FILE_CLEANUP' })
@@ -20,7 +21,6 @@ export class MiRemoteFileCleanup {
 	@Column('timestamp with time zone', { default: () => 'CURRENT_TIMESTAMP' })
 	public createdAt: Date;
 
-	@Index('IDX_REMOTE_FILE_CLEANUP_NEXT_ATTEMPT')
 	@Column('timestamp with time zone', { default: () => 'CURRENT_TIMESTAMP' })
 	public nextAttemptAt: Date;
 

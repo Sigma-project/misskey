@@ -272,3 +272,21 @@ mise exec -- ../../node_modules/.bin/eslint --quiet test/unit/RemoteFileReferenc
 - レビュー修正後のbackend全typecheck/eslintも成功（`/tmp/issue18-review-final-lint.log`）。API e2e全体はguardを有効にして実行中であり、結果は後続に記録する。
 
 - 全E2E初回は1262件成功したが、synalio/abuse-reportが第2Nest appを起動してtest DataSourceのdropSchemaを再実行し、guardが消えるため共通teardownが失敗した。残った関数により後続suite setupも失敗した。moveと同様、当該suiteのqueue起動直後にguardを再設置し、共通setup/teardownはtest限定のIF EXISTS付き関数清掃でschema再初期化・中断残骸に対応した。本番migrationの厳密なdownは変更していない。fixture eslint成功後、全E2Eを再実行中（`/tmp/issue18-review-fulle2e2.log`）。
+
+### Opus 5 第2回レビューの採否
+
+- N1: E2E fixture問題として妥当で対応済。第2Nest appのtest schema再作成が実際の発火点だった。setup/teardownのtest限定清掃とqueue開始後のguard復旧を採用した。本番migrationはtransactional up/downで履歴が管理され、冪等化を必須とする根拠がない。CREATE OR REPLACEで将来の式索引を無意識に古いまま残すリスクを増やさず、誤順序downも引き続き検出する。
+- N2: 中央で発生するクライアント入力エラーとして扱う。ApiCallServiceの既存RATE_LIMIT_EXCEEDED/AUTHENTICATION_FAILED同様、各endpoint metaに同じ共通エラーを複製しない。追加UUIDはpackages内検索で当該定義1件のみ。pages/createのNO_SUCH_FILEはb7b97489-0f66-4b12-a5ff-b21bd63f6e1c、notes/createはb6992544-63e7-67f0-fa7f-32444b1b5306で、元々同codeが発生元別UUIDを持つ規約。今回も中央DB guard発生元を一意に識別する。ログ必須化は不採用: JSON内の普通のmissing ID入力でも発火するため「低頻度のGC競合のみ」という前提が誤り。既存ApiErrorと同じ400応答とし、不正入力のmessage/userIdを必ずwarnする新しい運用方針は導入しない。HTTPテストで通常FKの500診断保持と区別する。
+- N3: 妥当として改善。due時刻の古い順を維持する(nextAttemptAt,fileId) tuple cursorと同順複合indexへ変更する。Dateのミリ秒丸めで同じ候補を繰り返さないようcursor時刻はPostgreSQLの::text値を保存する。逆ID順のmicrosecond差を持つ205候補の実DBテストで順序と各1回を確認する。
+- N4: 不採用。WHENのORはeyeCatchingImageIdか非空JSONのいずれかに実参照があればtrueで、他項NULLでもguardを呼ぶ。全項NULL/空は抽出されるIDが無く保護すべき参照も無い。nullable fixtureはこの広い入力も試すためで、具体的な保護回避反例は無い。IS DISTINCT FROMにして空NULL行でも関数を呼ぶ必要はない。
+- N5: 個別warn追加は予防提案として不採用。unlock例外は既にprocessのfailed+logger.warnへ到達し診断が残るため「観測不能」ではない。接続断ならPostgreSQLがsession lockを解放する。専用warnだけでは指摘の仮定である生きた接続のlock残存を解決せず、実際の故障根拠なく追加しない。旧row_ids関数DROP IF EXISTSは本番へ未マージの初期実装との差分で、masterのmigration履歴は一切編集していない。
+- 残余のChat/Gallery/Channel線形走査は今回の計測規模（Chat10万、Gallery/Channel各1万）の結果であり、より大きい運用で同じ性能を保証しない。候補backlog/最古時刻/処理時間を監視し、規模増大で走査が支配的になれば該当列のindexを追加する。countの概算化提案は実害根拠が示されておらず、計画の正確な未回収候補数を維持する。
+
+### 第2回レビュー修正後の検証結果
+
+- 全E2E: 30ファイル、1332件成功、既存2skip/20todo、exit 0（`/tmp/issue18-review-fulle2e2.log`）。Page guardの400、無関係FKの500、deleting中の同URI再登録の3件も成功。
+- tuple cursor変更後の清掃processor2ファイル51件成功（`/tmp/issue18-review2-processors.log`）。205件/microsecond境界のテストを含む。raw SQL cast列を引用する修正後に再実行した。
+- 複合due索引の新migrationをup/down/upし、pending DDL 0件（`/tmp/issue18-review2-migrations.log`）。この時点の新規migrationは合計5件。
+- backend全lint/typecheckと最終変更ファイルeslint成功（`/tmp/issue18-review2-lint.log`、`/tmp/issue18-review2-final-eslint.log`）。
+- N1のunit中断再開についても、2つの清掃processor fixtureでup前にtest限定の残存関数清掃を行うようにした。通常のunit終了時は厳密なdownでproduction rollbackを引き続き検証する。
+- 独立subagentは第2回修正差分も必須指摘なし。Opus 5は第3回再レビュー中。

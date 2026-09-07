@@ -49,6 +49,9 @@ describe('CleanRemoteNoteFilesProcessorService', () => {
 			{ provide: QueueLoggerService, useValue: { logger } },
 		] }).overrideProvider(DI.meta).useValue(meta).compile();
 		db = app.get(DI.db);
+		// Test schema reset drops tables but functions can survive an interrupted run.
+		await db.query('DROP FUNCTION IF EXISTS remote_file_cleanup_guard() CASCADE');
+		await db.query('DROP FUNCTION IF EXISTS remote_file_cleanup_json_ids(jsonb)');
 		await new RemoteFileReferenceGuard1788783564794().up(db);
 		ids = app.get(IdService);
 		service = app.get(CleanRemoteNoteFilesProcessorService);
@@ -179,13 +182,17 @@ describe('CleanRemoteNoteFilesProcessorService', () => {
 		const fileIds = Array.from({ length: 205 }, () => ids.gen());
 		owned.push(...fileIds);
 		await db.getRepository(MiRemoteFileCleanup).insert(fileIds.map(fileId => ({ fileId })));
+		// Reverse ID priority and retain sub-millisecond timestamps across batches.
+		for (const [index, fileId] of fileIds.entries()) {
+			await db.query(`UPDATE remote_file_cleanup SET "nextAttemptAt" = '2020-01-01'::timestamptz + ($1 * interval '1 microsecond') WHERE "fileId" = $2`, [205 - index, fileId]);
+		}
 		// Keep every row due to model another worker retaining its advisory lock.
 		const collecting = vi.spyOn(service, 'collect').mockResolvedValue('skipped');
 		const result = await service.process();
 		expect(result.skipped).toBeGreaterThanOrEqual(205);
 		const called = collecting.mock.calls.map(([id]) => id);
 		expect(new Set(called).size).toBe(called.length);
-		for (const id of fileIds) expect(called).toContain(id);
+		expect(called.filter(id => fileIds.includes(id))).toEqual([...fileIds].reverse());
 	});
 
 	test('internal storage awaits all artifacts and propagates errors other than ENOENT', async () => {

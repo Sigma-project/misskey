@@ -114,6 +114,9 @@ describe('CleanRemoteNotesProcessorService', () => {
 			.overrideProvider(DI.meta).useFactory({ factory: () => meta })
 			.compile();
 
+		// Test schema reset drops tables but functions can survive an interrupted run.
+		await app.get<DataSource>(DI.db).query('DROP FUNCTION IF EXISTS remote_file_cleanup_guard() CASCADE');
+		await app.get<DataSource>(DI.db).query('DROP FUNCTION IF EXISTS remote_file_cleanup_json_ids(jsonb)');
 		await new RemoteFileReferenceGuard1788783564794().up(app.get<DataSource>(DI.db));
 		service = app.get(CleanRemoteNotesProcessorService);
 		idService = app.get(IdService);

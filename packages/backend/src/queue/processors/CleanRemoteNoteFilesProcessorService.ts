@@ -121,21 +121,23 @@ export class CleanRemoteNoteFilesProcessorService {
 		const repository = this.db.getRepository(MiRemoteFileCleanup);
 		const cutoff = new Date(start);
 		const stats = { deleted: 0, deferred: 0, skipped: 0, failed: 0 };
-		let cursor = '';
+		let cursor: { nextAttemptAt: string; fileId: string } | undefined;
 		// Bound memory per query, not successful collections per invocation. This
 		// lets fast storage drain more than 100 files within the same time budget.
 		// A keyset cursor also prevents locked files from busy-looping this run.
 		while (Date.now() - start < 60 * 1000) {
 			const query = repository.createQueryBuilder('candidate')
 				.where('candidate.nextAttemptAt <= :cutoff', { cutoff })
-				.andWhere('candidate.fileId > :cursor', { cursor })
-				.orderBy('candidate.fileId', 'ASC').take(100);
+				.addSelect('candidate."nextAttemptAt"::text', 'cursorAttemptAt')
+				.orderBy('candidate.nextAttemptAt', 'ASC').addOrderBy('candidate.fileId', 'ASC').take(100);
+			if (cursor) query.andWhere('(candidate.nextAttemptAt, candidate.fileId) > (:nextAttemptAt, :fileId)', cursor);
 			if (!this.meta.enableRemoteNotesCleaning) query.andWhere("candidate.state = 'deleting'");
-			const candidates = await query.getMany();
+			const { entities: candidates, raw } = await query.getRawAndEntities();
 			if (candidates.length === 0) break;
-			for (const candidate of candidates) {
+			for (const [index, candidate] of candidates.entries()) {
 				if (Date.now() - start >= 60 * 1000) break;
-				cursor = candidate.fileId;
+				// Preserve PostgreSQL microseconds; JS Date truncation could repeat a batch.
+				cursor = { nextAttemptAt: raw[index].cursorAttemptAt, fileId: candidate.fileId };
 				try {
 					stats[await this.collect(candidate.fileId)]++;
 				} catch (err) {
