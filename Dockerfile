@@ -2,17 +2,21 @@
 
 ARG NODE_VERSION=26.4.0-trixie
 
+# Build libvips separately for the host build tools and the target runtime.
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION} AS native-vips
+COPY scripts/docker-build-libvips.sh /tmp/build-libvips.sh
+RUN sh /tmp/build-libvips.sh
+ENV PKG_CONFIG_PATH=/opt/vips/lib/pkgconfig
+ENV SHARP_FORCE_GLOBAL_LIBVIPS=1
+
+FROM --platform=$TARGETPLATFORM node:${NODE_VERSION} AS target-vips
+COPY scripts/docker-build-libvips.sh /tmp/build-libvips.sh
+RUN sh /tmp/build-libvips.sh
+ENV PKG_CONFIG_PATH=/opt/vips/lib/pkgconfig
+ENV SHARP_FORCE_GLOBAL_LIBVIPS=1
+
 # build assets & compile TypeScript
-
-FROM --platform=$BUILDPLATFORM node:${NODE_VERSION} AS native-builder
-
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-	--mount=type=cache,target=/var/lib/apt,sharing=locked \
-	rm -f /etc/apt/apt.conf.d/docker-clean \
-	; echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache \
-	&& apt-get update \
-	&& apt-get install -yqq --no-install-recommends \
-	build-essential
+FROM native-vips AS native-builder
 
 WORKDIR /misskey
 
@@ -40,17 +44,11 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
 
 COPY --link . ./
 
-RUN git submodule update --init
 RUN pnpm build
-RUN rm -rf .git/
 
 # build native dependencies for target platform
 
-FROM --platform=$TARGETPLATFORM node:${NODE_VERSION} AS target-builder
-
-RUN apt-get update \
-	&& apt-get install -yqq --no-install-recommends \
-	build-essential
+FROM target-vips AS target-builder
 
 WORKDIR /misskey
 
@@ -70,6 +68,14 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
 	pnpm i --frozen-lockfile --aggregate-output
 
 FROM --platform=$TARGETPLATFORM node:${NODE_VERSION}-slim AS runner
+
+COPY --from=target-vips /opt/vips/lib /opt/vips/lib
+COPY --from=target-vips /opt/vips/runtime-packages.txt /tmp/vips-runtime-packages.txt
+RUN apt-get update \
+	&& xargs -r apt-get install -y --no-install-recommends < /tmp/vips-runtime-packages.txt \
+	&& printf '%s\n' /opt/vips/lib > /etc/ld.so.conf.d/misskey-vips.conf \
+	&& ldconfig \
+	&& rm -rf /var/lib/apt/lists/* /tmp/vips-runtime-packages.txt
 
 ARG UID="991"
 ARG GID="991"
@@ -106,6 +112,8 @@ COPY --chown=misskey:misskey --from=native-builder /misskey/packages/misskey-bub
 COPY --chown=misskey:misskey --from=native-builder /misskey/packages/backend/built ./packages/backend/built
 COPY --chown=misskey:misskey --from=native-builder /misskey/packages/i18n/built ./packages/i18n/built
 COPY --chown=misskey:misskey . ./
+
+RUN node scripts/check-docker-jxl.mjs
 
 ENV LD_PRELOAD=/usr/local/lib/libjemalloc.so
 ENV NODE_ENV=production

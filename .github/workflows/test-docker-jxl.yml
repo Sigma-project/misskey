@@ -1,0 +1,49 @@
+name: Test Docker JXL
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - scripts/docker-build-libvips.sh
+      - scripts/build-sharp.mjs
+      - scripts/check-docker-jxl.mjs
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - package.json
+      - packages/backend/package.json
+      - .github/workflows/test-docker-jxl.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: JXL (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          submodules: recursive
+      - uses: docker/setup-buildx-action@v4
+      - name: Build the final runtime image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          load: true
+          push: false
+          tags: misskey-jxl:test
+          cache-from: type=gha,scope=jxl-${{ runner.arch }}
+          cache-to: type=gha,mode=max,scope=jxl-${{ runner.arch }}
+      - name: Verify JXL with the runtime user
+        run: docker run --rm --entrypoint node misskey-jxl:test scripts/check-docker-jxl.mjs
