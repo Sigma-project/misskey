@@ -3,7 +3,7 @@
 - 対象: https://github.com/Sigma-project/misskey/issues/15
 - 調査日: 2026-09-07
 - 基準: `origin/master` = `2b006ee066e6360957a0c37c42569a23273c35ff`。作業ツリーは古いので、最新ファイルは `git show origin/master:<path>` で確認した。
-- 状態: Fable 5.1 との2往復比較と、tutorial を JXL 生成・追加とするユーザー判断を反映した確定方針。実装未許可。計画合意を実装許可とは扱わない。
+- 現在の状態: 2026-09-07の明示的な実装許可に基づき実装済み。Opus 5 / 独立subagentのコードレビューは収束。PR [#20](https://github.com/Sigma-project/misskey/pull/20) で最終検証・CIを進めている。以降の調査・計画節は実装前の履歴であり、実行結果は [Docker実装記録](issue-15-docker.md) / [画像・テスト実装記録](issue-15-assets-tests.md) を参照。
 - 共通手順: [issue 計画一覧](issue-plans.md)。画像形式と実行方式のユーザー判断は後述。
 
 ## 要件・制約
@@ -13,7 +13,7 @@
 3. チュートリアル画像の参照先が実在し、表示・センシティブ切替が動作すること。
 4. 最新 `AGENTS.md` の不変条件に従い、サーバーの画像出力は JXL、sharp はグローバル JXL 対応 libvips にリンクする。WASM による既存アニメーション処理は維持する。
 5. Node / pnpm は mise 管理。コード・生成物は機能単位、生成コマンドの出力は実行ごとに別コミット。実装時は backend/frontend の該当スキル、出荷時は shipping-misskey-change を参照する。
-6. 実装・テスト・CIはまだ実行していない。以下はコード確認に基づく計画で、Docker障害の実環境再現を済ませたとは扱わない。
+6. 計画作成時点では実装・テスト・CIは未実行だった。計画時のコード確認と、後続の実環境検証結果を区別して記録する。
 
 ## 最新コードの根拠と残存範囲
 

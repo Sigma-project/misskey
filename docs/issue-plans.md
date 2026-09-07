@@ -6,10 +6,10 @@
 
 | Issue | 計画 | 状態 |
 | --- | --- | --- |
-| [#15 JXL 移行の regression](https://github.com/Sigma-project/misskey/issues/15) | [計画](issue-15-plan.md) | Fable と2往復の比較完了・tutorial はJXL生成に確定 |
-| [#18 既存の90日DBクリーンアップに添付ファイル削除を追加](https://github.com/Sigma-project/misskey/issues/18) | [計画](issue-18-plan.md) | 新要件を反映・Fable と5往復の議論完了 |
+| [#15 JXL 移行の regression](https://github.com/Sigma-project/misskey/issues/15) | [計画](issue-15-plan.md) | 実装済み・レビュー収束・[PR #20](https://github.com/Sigma-project/misskey/pull/20) 検証中 |
+| [#18 既存の90日DBクリーンアップに添付ファイル削除を追加](https://github.com/Sigma-project/misskey/issues/18) | [計画](issue-18-plan.md) | 明示許可後の実装・検証・再レビュー中 |
 
-## 基準と作業範囲
+## 計画作成時の基準と作業範囲
 
 - 計画基準は取得時の `origin/master`、`2b006ee066e6360957a0c37c42569a23273c35ff`。
 - 作業ディレクトリの HEAD は `5b730af8d127beb34cfcc29c2f6258b1119c4243` であり、旧版での初期調査結果をそのまま最新の事実として使用しない。最新コードは `git show origin/master:<path>` で参照した。作業ツリーの更新・実装は行わない。

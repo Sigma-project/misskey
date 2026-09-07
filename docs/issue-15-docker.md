@@ -43,4 +43,4 @@ PR の Docker 検証は amd64 / arm64 各ネイティブ runner で非公開ビ�
 
 最終版のamd64 Docker buildは成功（`/tmp/issue15-docker-final.log`）。runner内smokeでlibvips 8.18.3 / sharp 0.35.3、RGB lossless JXL往復、JPEG/WebP/PNG/TIFF往復、AVIF2種/SVG入力、WASM複数フレームGIF→JXL再デコードの全assert成功。ビルド後も`docker run --rm --entrypoint node misskey-issue15:verify scripts/check-docker-jxl.mjs`を実行し、実行ユーザー・jemalloc設定下で同じ検証に成功した。以前のキャッシュなし構築とキャッシュあり再構築も成功済み。
 
-Opus第2回は第1回の前提誤りを撤回し、コード上の未解決不具合なしと回答した。第3回ではshell修正を再確認する。アプリupload/e2eとPRのarm64 CIは別途結果を追記する。
+Opus第2回は第1回の前提誤りを撤回し、コード上の未解決不具合なしと回答した。第3回でshell修正が正しいと確認され、Opusのコードに対する必須指摘も収束した。アプリupload/e2eとPRのarm64 CIは別途結果を追記する。
