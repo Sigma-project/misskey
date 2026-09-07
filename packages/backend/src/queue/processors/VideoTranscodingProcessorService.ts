@@ -111,6 +111,9 @@ export class VideoTranscodingProcessorService {
 		const storedInternal = !meta.useObjectStorage;
 		// アップロード済み成果物のストレージ上のプレフィックス（孤児掃除に使う）
 		let storedPrefix: string | null = null;
+		// 終端イベントが進捗通知を追い越して active に戻ることを防ぐ。
+		let progressPending = Promise.resolve();
+		let acceptingProgress = true;
 
 		try {
 			// --- download ---
@@ -135,14 +138,22 @@ export class VideoTranscodingProcessorService {
 					return current == null || current.transcodingStatus === 'failed';
 				},
 				onProgress: (p) => {
-					void this.publish(file, caps.vvc, startedAt, p.phase, p.percent, { codec: p.codec, fps: p.fps, speed: p.speed });
+					if (!acceptingProgress) return;
+					progressPending = progressPending.then(() => this.publish(file, caps.vvc, startedAt, p.phase, p.percent, { codec: p.codec, fps: p.fps, speed: p.speed }));
 				},
 			});
+
+			acceptingProgress = false;
+			await progressPending;
 
 			// --- upload ---
 			await this.publish(file, caps.vvc, startedAt, 'uploading', 0);
 			const rand = crypto.randomBytes(8).toString('hex');
 			const logicalPrefix = `stream-${file.id}-${rand}`;
+			// 途中の書き込み失敗でも、既に保存したセグメントを掃除できるよう先に記録する。
+			storedPrefix = !storedInternal && meta.objectStoragePrefix
+				? `${meta.objectStoragePrefix}/${logicalPrefix}`
+				: logicalPrefix;
 			const upload = await this.uploadArtifacts(outDir, logicalPrefix, storedInternal, meta, result.hasDash);
 			storedPrefix = upload.storedPrefix;
 			await this.publish(file, caps.vvc, startedAt, 'uploading', 100);
@@ -163,6 +174,7 @@ export class VideoTranscodingProcessorService {
 				// cancel/delete された or status が変わった → アップロード済み成果物を破棄
 				await this.cleanupArtifacts(storedPrefix, storedInternal, meta).catch(() => { /* ignore */ });
 				storedPrefix = null;
+				await this.publish(file, caps.vvc, startedAt, 'failed', 0, { message: 'cancelled or removed' });
 				return 'aborted: cancelled or removed';
 			}
 
@@ -174,6 +186,8 @@ export class VideoTranscodingProcessorService {
 			await this.publish(file, caps.vvc, startedAt, 'done', 100);
 			return 'Success';
 		} catch (err) {
+			acceptingProgress = false;
+			await progressPending;
 			// アップロード済み成果物の孤児化を防ぐ（コミット前に失敗/中断した場合）
 			if (storedPrefix != null) {
 				await this.cleanupArtifacts(storedPrefix, storedInternal, meta).catch(() => { /* ignore */ });
@@ -181,6 +195,7 @@ export class VideoTranscodingProcessorService {
 
 			// キャンセル中断はリトライせず、status(既にfailed)も上書きしない
 			if (err instanceof TranscodeCancelledError) {
+				await this.publish(file, caps.vvc, startedAt, 'failed', 0, { message: 'cancelled' });
 				this.logger.info(`Transcoding cancelled for ${file.id}`);
 				return 'aborted: cancelled';
 			}
