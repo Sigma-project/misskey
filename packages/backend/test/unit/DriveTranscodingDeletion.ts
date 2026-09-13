@@ -175,9 +175,50 @@ describe('drive deletion racing with video transcoding', () => {
 				await drive[method](snapshot);
 				expect(stored.size).toBe(0);
 				expect(internal.delPrefixAsync).toHaveBeenCalledWith(storedInternal ? latestPrefix : snapshot.transcodingPrefix);
-				expect(s3.deletePrefix).toHaveBeenCalledWith(expect.anything(), `${storedInternal ? snapshot.transcodingPrefix : latestPrefix}/`);
+				expect(s3.deletePrefix).toHaveBeenCalledWith(expect.anything(), `${storedInternal ? snapshot.transcodingPrefix : latestPrefix}/`, expect.any(AbortSignal));
 			});
 		}
+
+		test(`${method} shares one S3 cleanup deadline for latest and stale variants`, async () => {
+			const snapshot = await file({ transcodingPrefix: 'previous-stream', transcodingStoredInternal: false });
+			await db.getRepository(MiDriveFile).update(snapshot.id, { transcodingPrefix: 'current-stream' });
+			const controller = new AbortController();
+			const deadline = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+			const warn = vi.spyOn(drive['deleteLogger'], 'warn').mockImplementation(() => {});
+			const entered = Promise.withResolvers<void>();
+			const release = Promise.withResolvers<void>();
+			vi.mocked(s3.deletePrefix).mockImplementation(async (_meta, _prefix, signal) => {
+				entered.resolve();
+				signal?.throwIfAborted();
+				await Promise.race([
+					release.promise,
+					new Promise<void>((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal.reason), { once: true })),
+				]);
+			});
+			let finished = false;
+			const deleting = drive[method](snapshot).then(() => { finished = true; });
+			try {
+				await entered.promise;
+				expect(await db.getRepository(MiDriveFile).findOneBy({ id: snapshot.id })).toBeNull();
+				expect(finished).toBe(false);
+				expect(deadline).toHaveBeenCalledExactlyOnceWith(30 * 1000);
+				expect(s3.deletePrefix).toHaveBeenNthCalledWith(1, expect.anything(), 'current-stream/', controller.signal);
+				controller.abort();
+				await deleting;
+				expect(s3.deletePrefix).toHaveBeenNthCalledWith(2, expect.anything(), 'previous-stream/', controller.signal);
+				expect(deadline).toHaveBeenCalledTimes(1);
+				expect(warn).toHaveBeenCalledTimes(2);
+				expect(app.get(DriveChart).update).toHaveBeenCalledTimes(1);
+				expect(app.get(PerUserDriveChart).update).toHaveBeenCalledTimes(1);
+				expect(app.get(GlobalEventService).publishDriveStream).toHaveBeenCalledTimes(1);
+			} finally {
+				controller.abort();
+				// The old implementation has no signal; still release its pending mock on failure.
+				release.resolve();
+				await deleting;
+			}
+			expect(finished).toBe(true);
+		});
 	}
 
 	test('deleteFile waits for internal stream deletion after committing the row deletion', async () => {
@@ -220,5 +261,26 @@ describe('drive deletion racing with video transcoding', () => {
 		expect(internal.delPrefixAsync).toHaveBeenCalledWith('legacy-stream');
 		expect(await db.getRepository(MiDriveFile).findOneBy({ id: snapshot.id })).toMatchObject({ isLink: true, isRemoteCacheExpired: true });
 		expect(app.get(DriveChart).update).toHaveBeenCalledWith(expect.objectContaining({ isRemoteCacheExpired: false, isLink: false }), false);
+	});
+
+	test('remote expiry proceeds after its S3 stream cleanup deadline', async () => {
+		const snapshot = await file({
+			userHost: 'remote.example', uri: 'https://remote.example/video.mp4',
+			transcodingPrefix: 'legacy-stream', transcodingStoredInternal: false,
+		});
+		const controller = new AbortController();
+		controller.abort();
+		const deadline = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+		const warn = vi.spyOn(drive['deleteLogger'], 'warn').mockImplementation(() => {});
+		vi.mocked(s3.deletePrefix).mockImplementation(async (_meta, _prefix, signal) => {
+			signal?.throwIfAborted();
+		});
+		await drive.deleteFileSync(snapshot, true);
+		expect(deadline).toHaveBeenCalledExactlyOnceWith(30 * 1000);
+		expect(s3.deletePrefix).toHaveBeenCalledWith(expect.anything(), 'legacy-stream/', controller.signal);
+		expect(warn).toHaveBeenCalledOnce();
+		expect(await db.getRepository(MiDriveFile).findOneBy({ id: snapshot.id })).toMatchObject({ isLink: true, isRemoteCacheExpired: true });
+		expect(app.get(DriveChart).update).toHaveBeenCalledTimes(1);
+		expect(app.get(GlobalEventService).publishDriveStream).toHaveBeenCalledTimes(1);
 	});
 });

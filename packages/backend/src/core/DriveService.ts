@@ -813,7 +813,7 @@ export class DriveService {
 	 * （オリジナルファイルの storedInternal とは独立）
 	 */
 	@bindThis
-	private async cleanupTranscodingArtifacts(file: MiDriveFile): Promise<void> {
+	private async cleanupTranscodingArtifacts(file: MiDriveFile, signal?: AbortSignal): Promise<void> {
 		if (file.transcodingPrefix == null) return;
 
 		try {
@@ -822,7 +822,7 @@ export class DriveService {
 			} else {
 				// transcodingPrefix には保存時の実キー prefix（objectStoragePrefix込み）を記録しているため、
 				// 現在の objectStoragePrefix に依存せず削除できる
-				await this.s3Service.deletePrefix(this.meta, `${file.transcodingPrefix}/`);
+				await this.s3Service.deletePrefix(this.meta, `${file.transcodingPrefix}/`, signal ?? AbortSignal.timeout(30 * 1000));
 			}
 		} catch (err) {
 			this.deleteLogger.warn(`Failed to cleanup transcoding artifacts for ${file.id}`, err as Error);
@@ -915,11 +915,13 @@ export class DriveService {
 			const removed = (result.raw as MiDriveFile[])[0];
 			if (removed == null) return;
 			deletedFile = removed;
-			await this.cleanupTranscodingArtifacts(deletedFile);
+			// Share one deadline so reclaiming a stale variant cannot extend the API wait.
+			const cleanupSignal = AbortSignal.timeout(30 * 1000);
+			await this.cleanupTranscodingArtifacts(deletedFile, cleanupSignal);
 			// Also reclaim the caller's previous variant if a replacement completed.
 			if (file.transcodingPrefix !== deletedFile.transcodingPrefix
 				|| file.transcodingStoredInternal !== deletedFile.transcodingStoredInternal) {
-				await this.cleanupTranscodingArtifacts(file);
+				await this.cleanupTranscodingArtifacts(file, cleanupSignal);
 			}
 		}
 
