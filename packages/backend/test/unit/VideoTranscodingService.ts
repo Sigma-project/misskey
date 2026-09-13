@@ -14,9 +14,11 @@ import type { Config } from '@/config.js';
 import type { FFmpegCapabilityService } from '@/core/FFmpegCapabilityService.js';
 import type { LoggerService } from '@/core/LoggerService.js';
 import type Logger from '@/logger.js';
+import { ffprobe } from '@/misc/ffprobe.js';
 
 vi.mock('fluent-ffmpeg', () => ({ default: vi.fn() }));
 vi.mock('@/core/LoggerService.js', () => ({ LoggerService: class {} }));
+vi.mock('@/misc/ffprobe.js', () => ({ ffprobe: vi.fn() }));
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -32,6 +34,14 @@ function harness() {
 	logger.getLogger.mockReturnValue(mock<Logger>());
 	return new VideoTranscodingService(mock<Config>(), caps, logger);
 }
+
+describe('video transcoding ffprobe failure', () => {
+	test.each(['timeout', 'output limit', 'invalid metadata'])('propagates %s instead of returning usable output', async (reason) => {
+		const error = new Error(reason);
+		vi.mocked(ffprobe).mockRejectedValue(error);
+		await expect(harness()['probe']('init.mp4')).rejects.toBe(error);
+	});
+});
 
 describe('video transcoding output cleanup', () => {
 	test.each(['encode failure', 'unusable output'])('discards partial VVC files on %s before counting and uploading AV1', async (failure) => {
