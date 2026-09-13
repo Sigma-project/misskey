@@ -946,32 +946,40 @@ export class DriveService {
 
 	/** Storage-only deletion for the durable remote-note cleanup worker. */
 	@bindThis
-	public async deleteFileStorage(file: MiDriveFile) {
+	public async deleteFileStorage(file: MiDriveFile, signal?: AbortSignal) {
+		signal?.throwIfAborted();
 		const keys = [file.accessKey, file.thumbnailAccessKey, file.webpublicAccessKey]
 			.filter((key): key is string => key != null);
 		if (file.storedInternal) {
-			for (const key of keys) await this.internalStorageService.delAsync(key);
+			for (const key of keys) {
+				signal?.throwIfAborted();
+				await this.internalStorageService.delAsync(key);
+			}
 		} else if (!file.isLink) {
-			for (const key of keys) await this.deleteObjectStorageFile(key);
+			for (const key of keys) {
+				signal?.throwIfAborted();
+				await this.deleteObjectStorageFile(key, signal);
+			}
 		}
 		if (file.transcodingPrefix != null) {
+			signal?.throwIfAborted();
 			if (file.transcodingStoredInternal) {
 				await this.internalStorageService.delPrefixAsync(file.transcodingPrefix);
 			} else {
-				await this.s3Service.deletePrefix(this.meta, `${file.transcodingPrefix}/`);
+				await this.s3Service.deletePrefix(this.meta, `${file.transcodingPrefix}/`, signal);
 			}
 		}
 	}
 
 	@bindThis
-	public async deleteObjectStorageFile(key: string) {
+	public async deleteObjectStorageFile(key: string, signal?: AbortSignal) {
 		try {
 			const param = {
 				Bucket: this.meta.objectStorageBucket,
 				Key: key,
 			} as DeleteObjectCommandInput;
 
-			await this.s3Service.delete(this.meta, param);
+			await this.s3Service.delete(this.meta, param, signal);
 		} catch (err: any) {
 			if (err.name === 'NoSuchKey') {
 				this.deleteLogger.warn(`The object storage had no such key to delete: ${key}. Skipping this.`, err as Error);
