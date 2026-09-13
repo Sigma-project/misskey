@@ -440,7 +440,7 @@ export class DriveService {
 		for (const fileId of exceedFileIds) {
 			const file = await this.driveFilesRepository.findOneBy({ id: fileId });
 			if (file == null) continue;
-			this.deleteFile(file, true);
+			await this.deleteFile(file, true);
 		}
 	}
 
@@ -813,7 +813,7 @@ export class DriveService {
 
 		try {
 			if (file.transcodingStoredInternal) {
-				this.internalStorageService.delPrefix(file.transcodingPrefix);
+				await this.internalStorageService.delPrefixAsync(file.transcodingPrefix);
 			} else {
 				// transcodingPrefix には保存時の実キー prefix（objectStoragePrefix込み）を記録しているため、
 				// 現在の objectStoragePrefix に依存せず削除できる
@@ -848,9 +848,7 @@ export class DriveService {
 			}
 		}
 
-		void this.cleanupTranscodingArtifacts(file);
-
-		this.deletePostProcess(file, isExpired, deleter);
+		await this.deletePostProcess(file, isExpired, deleter);
 	}
 
 	@bindThis
@@ -881,15 +879,15 @@ export class DriveService {
 			await Promise.all(promises);
 		}
 
-		await this.cleanupTranscodingArtifacts(file);
-
 		await this.deletePostProcess(file, isExpired, deleter);
 	}
 
 	@bindThis
 	private async deletePostProcess(file: MiDriveFile, isExpired = false, deleter?: MiUser) {
+		let deletedFile = file;
 		// リモートファイル期限切れ削除後は直リンクにする
 		if (isExpired && file.userHost !== null && file.uri != null) {
+			await this.cleanupTranscodingArtifacts(file);
 			const result = await this.driveFilesRepository.update({ id: file.id, isLink: false }, {
 				isLink: true,
 				isRemoteCacheExpired: true,
@@ -905,10 +903,22 @@ export class DriveService {
 			// Only the successful transition accounts from the old cached state.
 			if (result.affected !== 1) return;
 		} else {
-			await this.driveFilesRepository.delete(file.id);
+			// DELETE serializes with the worker's completion UPDATE and returns its
+			// latest storage descriptor if transcoding completed after the caller read it.
+			const result = await this.driveFilesRepository.createQueryBuilder().delete()
+				.where('id = :id', { id: file.id }).returning('*').execute();
+			const removed = (result.raw as MiDriveFile[])[0];
+			if (removed == null) return;
+			deletedFile = removed;
+			await this.cleanupTranscodingArtifacts(deletedFile);
+			// Also reclaim the caller's previous variant if a replacement completed.
+			if (file.transcodingPrefix !== deletedFile.transcodingPrefix
+				|| file.transcodingStoredInternal !== deletedFile.transcodingStoredInternal) {
+				await this.cleanupTranscodingArtifacts(file);
+			}
 		}
 
-		await this.notifyFileDeleted(file, deleter);
+		await this.notifyFileDeleted(deletedFile, deleter);
 	}
 
 	@bindThis
