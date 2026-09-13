@@ -10,9 +10,9 @@ import { describe, beforeAll, test, expect, vi } from 'vitest';
 // node-fetch only supports it's own Blob yet
 // https://github.com/node-fetch/node-fetch/pull/1664
 import { Blob } from 'node-fetch';
-import { api, castAsError, initTestDb, post, role, signup, simpleGet, uploadFile } from '../utils.js';
+import { api, castAsError, initTestDb, port, post, relativeFetch, role, signup, simpleGet, uploadFile } from '../utils.js';
 import type * as misskey from 'misskey-js';
-import { MiUser } from '@/models/_.js';
+import { MiDriveFile, MiEmoji, MiUser } from '@/models/_.js';
 
 const waitForPushToTlOptions = { timeout: 3000, interval: 25 };
 
@@ -915,6 +915,59 @@ describe('Endpoints', () => {
 
 			assert.strictEqual(res.status, 400);
 		});
+	});
+
+	describe('admin/emoji remote file copies', () => {
+		for (const operation of ['add', 'update'] as const) {
+			test(`${operation} stores and serves a dedicated local copy`, async () => {
+				const uploaded = await uploadFile(alice);
+				assert.strictEqual(uploaded.status, 200);
+				const sourceId = uploaded.body!.id;
+				const name = `remote_file_copy_${operation}`;
+				let emojiId: string | undefined;
+				if (operation === 'update') {
+					const existing = await api('admin/emoji/add', { name, fileId: sourceId }, alice);
+					assert.strictEqual(existing.status, 200);
+					emojiId = existing.body.id;
+				}
+
+				const connection = await initTestDb(true);
+				try {
+					const files = connection.getRepository(MiDriveFile);
+					// The configured public hostname is not the test server address.
+					// Keep /files but point DownloadService at this server's real port.
+					const uploadedFile = await files.findOneByOrFail({ id: sourceId });
+					const sourceUrl = new URL(new URL(uploadedFile.url).pathname, `http://127.0.0.1:${port}/`).href;
+					await files.update(sourceId, { url: sourceUrl, userId: null, userHost: 'remote.example' });
+					const source = await files.findOneByOrFail({ id: sourceId });
+					const sourceResponse = await relativeFetch(new URL(source.url).pathname);
+					assert.strictEqual(sourceResponse.status, 200);
+					const sourceBytes = Buffer.from(await sourceResponse.arrayBuffer());
+
+					const response = operation === 'add'
+						? await api('admin/emoji/add', { name, fileId: sourceId }, alice)
+						: await api('admin/emoji/update', { id: emojiId!, fileId: sourceId }, alice);
+					assert.strictEqual(response.status, operation === 'add' ? 200 : 204);
+					const emoji = await connection.getRepository(MiEmoji).findOneByOrFail({ name });
+					const copy = await files.findOneByOrFail({ url: emoji.originalUrl });
+					assert.notStrictEqual(copy.id, source.id);
+					assert.notStrictEqual(copy.accessKey, source.accessKey);
+					assert.strictEqual(copy.userId, null);
+					assert.strictEqual(copy.userHost, null);
+					assert.strictEqual(copy.isLink, false);
+					assert.strictEqual(emoji.publicUrl, copy.webpublicUrl ?? copy.url);
+
+					const copyResponse = await relativeFetch(new URL(copy.url).pathname);
+					assert.strictEqual(copyResponse.status, 200);
+					assert.deepStrictEqual(Buffer.from(await copyResponse.arrayBuffer()), sourceBytes);
+					const publicResponse = await relativeFetch(new URL(emoji.publicUrl).pathname);
+					assert.strictEqual(publicResponse.status, 200);
+					assert.ok((await publicResponse.arrayBuffer()).byteLength > 0);
+				} finally {
+					await connection.destroy();
+				}
+			});
+		}
 	});
 
 	describe('drive/folders/create', () => {

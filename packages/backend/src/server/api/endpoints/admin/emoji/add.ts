@@ -5,9 +5,10 @@
 
 import { Inject, Injectable } from '@nestjs/common';
 import { Endpoint } from '@/server/api/endpoint-base.js';
-import type { DriveFilesRepository } from '@/models/_.js';
+import type { DriveFilesRepository, MiDriveFile } from '@/models/_.js';
 import { DI } from '@/di-symbols.js';
 import { CustomEmojiService } from '@/core/CustomEmojiService.js';
+import { DriveService } from '@/core/DriveService.js';
 import { EmojiEntityService } from '@/core/entities/EmojiEntityService.js';
 import { FILE_TYPE_IMAGE } from '@/const.js';
 import { ApiError } from '../../../error.js';
@@ -79,31 +80,48 @@ export default class extends Endpoint<typeof meta, typeof paramDef> { // eslint-
 	constructor(
 		@Inject(DI.driveFilesRepository)
 		private driveFilesRepository: DriveFilesRepository,
+		private driveService: DriveService,
 		private customEmojiService: CustomEmojiService,
 		private emojiEntityService: EmojiEntityService,
 	) {
 		super(meta, paramDef, async (ps, me) => {
-			const driveFile = await this.driveFilesRepository.findOneBy({ id: ps.fileId });
+			let driveFile = await this.driveFilesRepository.findOneBy({ id: ps.fileId });
 			if (driveFile == null) throw new ApiError(meta.errors.noSuchFile);
 			const isDuplicate = await this.customEmojiService.checkDuplicate(ps.name);
 			if (isDuplicate) throw new ApiError(meta.errors.duplicateName);
 			if (!FILE_TYPE_IMAGE.includes(driveFile.type)) throw new ApiError(meta.errors.unsupportedFileType);
 
-			const emoji = await this.customEmojiService.add({
-				originalUrl: driveFile.url,
-				publicUrl: driveFile.webpublicUrl ?? driveFile.url,
-				fileType: driveFile.webpublicType ?? driveFile.type,
-				name: ps.name,
-				category: ps.category ?? null,
-				aliases: ps.aliases ?? [],
-				host: null,
-				license: ps.license ?? null,
-				isSensitive: ps.isSensitive ?? false,
-				localOnly: ps.localOnly ?? false,
-				roleIdsThatCanBeUsedThisEmojiAsReaction: ps.roleIdsThatCanBeUsedThisEmojiAsReaction ?? [],
-			}, me);
+			let copy: MiDriveFile | undefined;
+			try {
+				if (driveFile.userHost != null) {
+					try {
+						copy = await this.driveService.uploadFromUrl({ url: driveFile.url, user: null, force: true });
+					} catch {
+						throw new ApiError();
+					}
+					if (!FILE_TYPE_IMAGE.includes(copy.type)) throw new ApiError();
+					driveFile = copy;
+				}
 
-			return this.emojiEntityService.packDetailed(emoji);
+				const emoji = await this.customEmojiService.add({
+					originalUrl: driveFile.url,
+					publicUrl: driveFile.webpublicUrl ?? driveFile.url,
+					fileType: driveFile.webpublicType ?? driveFile.type,
+					name: ps.name,
+					category: ps.category ?? null,
+					aliases: ps.aliases ?? [],
+					host: null,
+					license: ps.license ?? null,
+					isSensitive: ps.isSensitive ?? false,
+					localOnly: ps.localOnly ?? false,
+					roleIdsThatCanBeUsedThisEmojiAsReaction: ps.roleIdsThatCanBeUsedThisEmojiAsReaction ?? [],
+				}, me);
+
+				return await this.emojiEntityService.packDetailed(emoji);
+			} catch (err) {
+				if (copy) await this.driveService.deleteUnreferencedEmojiCopy(copy);
+				throw err;
+			}
 		});
 	}
 }

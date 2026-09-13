@@ -20,6 +20,7 @@ import { MiDriveFile } from '@/models/DriveFile.js';
 import { IdService } from '@/core/IdService.js';
 import { isDuplicateKeyValueError } from '@/misc/is-duplicate-key-value-error.js';
 import { findReusableDriveFile } from '@/misc/find-reusable-drive-file.js';
+import { hasEmojiFileReferences } from '@/misc/has-emoji-file-references.js';
 import { FILE_TYPE_BROWSERSAFE } from '@/const.js';
 import { IdentifiableError } from '@/misc/identifiable-error.js';
 import { contentDisposition } from '@/misc/content-disposition.js';
@@ -213,7 +214,13 @@ export class DriveService {
 				uploads.push(this.upload(thumbnailKey, alts.thumbnail.data, alts.thumbnail.type, alts.thumbnail.ext, `${name}.thumbnail`));
 			}
 
-			await Promise.all(uploads);
+			// A failed PUT must not race cleanup with another PUT still in flight.
+			const results = await Promise.allSettled(uploads);
+			const failure = results.find(result => result.status === 'rejected');
+			if (failure) {
+				await this.cleanupFailedFileSave([key, webpublicKey, thumbnailKey], false);
+				throw failure.reason;
+			}
 			//#endregion
 
 			file.url = url;
@@ -235,19 +242,24 @@ export class DriveService {
 			const thumbnailAccessKey = 'thumbnail-' + randomUUID();
 			const webpublicAccessKey = 'webpublic-' + randomUUID();
 
-			const url = this.internalStorageService.saveFromPath(accessKey, path);
-
+			let url: string;
 			let thumbnailUrl: string | null = null;
 			let webpublicUrl: string | null = null;
 
-			if (alts.thumbnail) {
-				thumbnailUrl = this.internalStorageService.saveFromBuffer(thumbnailAccessKey, alts.thumbnail.data);
-				this.registerLogger.info(`thumbnail stored: ${thumbnailAccessKey}`);
-			}
+			try {
+				url = this.internalStorageService.saveFromPath(accessKey, path);
+				if (alts.thumbnail) {
+					thumbnailUrl = this.internalStorageService.saveFromBuffer(thumbnailAccessKey, alts.thumbnail.data);
+					this.registerLogger.info(`thumbnail stored: ${thumbnailAccessKey}`);
+				}
 
-			if (alts.webpublic) {
-				webpublicUrl = this.internalStorageService.saveFromBuffer(webpublicAccessKey, alts.webpublic.data);
-				this.registerLogger.info(`web stored: ${webpublicAccessKey}`);
+				if (alts.webpublic) {
+					webpublicUrl = this.internalStorageService.saveFromBuffer(webpublicAccessKey, alts.webpublic.data);
+					this.registerLogger.info(`web stored: ${webpublicAccessKey}`);
+				}
+			} catch (err) {
+				await this.cleanupFailedFileSave([accessKey, thumbnailAccessKey, webpublicAccessKey], true);
+				throw err;
 			}
 
 			file.storedInternal = true;
@@ -265,6 +277,30 @@ export class DriveService {
 
 			return await this.driveFilesRepository.insertOne(file);
 		}
+	}
+
+	/** Only used before the Drive row is inserted; never remove a committed file on a read failure. */
+	@bindThis
+	private async cleanupFailedFileSave(keys: (string | null)[], storedInternal: boolean): Promise<void> {
+		const signal = AbortSignal.timeout(30 * 1000);
+		await Promise.allSettled(keys.filter((key): key is string => key != null).map(async key => {
+			try {
+				if (storedInternal) {
+					await this.internalStorageService.delAsync(key);
+				} else {
+					await this.deleteObjectStorageFile(key, signal);
+				}
+			} catch (err) {
+				this.registerLogger.warn(`Failed to reclaim an incomplete upload: ${key}`, err as Error);
+				if (!storedInternal) {
+					try {
+						await this.queueService.createDeleteObjectStorageFileJob(key);
+					} catch (queueError) {
+						this.registerLogger.warn(`Failed to queue incomplete upload cleanup: ${key}`, queueError as Error);
+					}
+				}
+			}
+		}));
 	}
 
 	/**
@@ -405,12 +441,13 @@ export class DriveService {
 					if ('Bucket' in result) { // CompleteMultipartUploadCommandOutput
 						this.registerLogger.debug(`Uploaded: ${result.Bucket}/${result.Key} => ${result.Location}`);
 					} else { // AbortMultipartUploadCommandOutput
-						this.registerLogger.error(`Upload Result Aborted: key = ${key}, filename = ${filename}`);
+						throw new Error(`Upload Result Aborted: key = ${key}, filename = ${filename}`);
 					}
 				})
 			.catch(
 				err => {
 					this.registerLogger.error(`Upload Failed: key = ${key}, filename = ${filename}`, err);
+					throw err;
 				},
 			);
 	}
@@ -831,6 +868,8 @@ export class DriveService {
 
 	@bindThis
 	public async deleteFile(file: MiDriveFile, isExpired = false, deleter?: MiUser) {
+		if (isExpired && file.userHost != null && await hasEmojiFileReferences(this.driveFilesRepository.manager, file)) return;
+
 		if (file.storedInternal) {
 			this.internalStorageService.del(file.accessKey!);
 
@@ -858,6 +897,8 @@ export class DriveService {
 
 	@bindThis
 	public async deleteFileSync(file: MiDriveFile, isExpired = false, deleter?: MiUser) {
+		if (isExpired && file.userHost != null && await hasEmojiFileReferences(this.driveFilesRepository.manager, file)) return;
+
 		if (file.storedInternal) {
 			this.internalStorageService.del(file.accessKey!);
 
@@ -885,6 +926,20 @@ export class DriveService {
 		}
 
 		await this.deletePostProcess(file, isExpired, deleter);
+	}
+
+	/** A failed API response can follow a committed Emoji write. Preserve any referenced copy. */
+	@bindThis
+	public async deleteUnreferencedEmojiCopy(file: MiDriveFile): Promise<void> {
+		if (file.userHost != null || file.userId != null) return;
+		try {
+			if (await hasEmojiFileReferences(this.driveFilesRepository.manager, file)) return;
+			await this.deleteFileStorage(file, AbortSignal.timeout(30 * 1000));
+			await this.deletePostProcess(file);
+		} catch (err) {
+			// Unknown reference state must retain the copy; cleanup must not mask the API error.
+			this.deleteLogger.warn(`Could not reclaim unused emoji copy: ${file.id}`, err as Error);
+		}
 	}
 
 	@bindThis

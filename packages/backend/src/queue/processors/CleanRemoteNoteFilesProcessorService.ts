@@ -11,6 +11,7 @@ import { MiRemoteFileCleanup } from '@/models/RemoteFileCleanup.js';
 import type { MiMeta } from '@/models/Meta.js';
 import { DriveService } from '@/core/DriveService.js';
 import { bindThis } from '@/decorators.js';
+import { hasEmojiFileReferences } from '@/misc/has-emoji-file-references.js';
 import { QueueLoggerService } from '../QueueLoggerService.js';
 
 @Injectable()
@@ -66,6 +67,12 @@ export class CleanRemoteNoteFilesProcessorService {
 				const file = await manager.findOne(MiDriveFile, { where: { id: fileId }, lock: { mode: 'pessimistic_write' } });
 				const candidate = await manager.findOneBy(MiRemoteFileCleanup, { fileId });
 				if (!candidate || candidate.nextAttemptAt > new Date()) return null;
+				// Legacy emoji registrations store URLs rather than a Drive file ID.
+				// Keep the saved keys even when a partially completed deletion is resumed.
+				if (await hasEmojiFileReferences(manager, file, candidate.descriptor)) {
+					await this.postpone(manager, candidate, null);
+					return null;
+				}
 				if (candidate.state === 'deleting') {
 					if (!candidate.descriptor) throw new Error('Deleting candidate has no storage descriptor');
 					return candidate.descriptor;
