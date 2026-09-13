@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 
-import { In } from 'typeorm';
+import { In, IsNull, Like } from 'typeorm';
 import { Inject, Injectable } from '@nestjs/common';
 import { Endpoint } from '@/server/api/endpoint-base.js';
 import { DI } from '@/di-symbols.js';
@@ -45,10 +45,14 @@ export default class extends Endpoint<typeof meta, typeof paramDef> { // eslint-
 			}
 
 			await this.videoTranscodingProgressService.remove(ps.fileId);
-			// pending/processing のジョブのみキャンセルし、既に completed/skipped のものは上書きしない
+			// Newly queued local videos may still have NULL status while enqueue is settling.
+			// Keep completed/skipped files and unrelated NULL-status files unchanged.
 			// （完了直後のキャンセルで成果物URLを残したまま failed に壊すのを防ぐ）
 			await this.driveFilesRepository.update(
-				{ id: ps.fileId, transcodingStatus: In(['pending', 'processing']) },
+				[
+					{ id: ps.fileId, transcodingStatus: In(['pending', 'processing']) },
+					{ id: ps.fileId, transcodingStatus: IsNull(), userHost: IsNull(), type: Like('video/%'), isLink: false },
+				],
 				{ transcodingStatus: 'failed' },
 			);
 		});

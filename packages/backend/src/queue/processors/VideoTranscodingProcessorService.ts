@@ -7,6 +7,7 @@ import * as fs from 'node:fs';
 import * as Path from 'node:path';
 import * as crypto from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
+import { In, IsNull, Or } from 'typeorm';
 import { DI } from '@/di-symbols.js';
 import type { Config } from '@/config.js';
 import type { DriveFilesRepository } from '@/models/_.js';
@@ -102,7 +103,13 @@ export class VideoTranscodingProcessorService {
 		const oldPrefix = file.transcodingPrefix;
 		const oldStoredInternal = file.transcodingStoredInternal ?? false;
 
-		await this.driveFilesRepository.update(file.id, { transcodingStatus: 'processing' });
+		// NULL covers jobs queued before pending was recorded; processing covers
+		// automatic retries and stalled jobs reclaimed after a worker restart.
+		const claimed = await this.driveFilesRepository.update(
+			{ id: file.id, transcodingStatus: Or(IsNull(), In(['pending', 'processing'])) },
+			{ transcodingStatus: 'processing' },
+		);
+		if (claimed.affected !== 1) return 'aborted: cancelled or already finished';
 		await this.publish(file, caps.vvc, startedAt, 'queued', 0);
 
 		const [inputPath, cleanupInput] = await createTemp();
@@ -204,7 +211,7 @@ export class VideoTranscodingProcessorService {
 			// 最終試行で失敗した場合のみ failed を確定させる
 			const maxAttempts = job.opts.attempts ?? 1;
 			if (job.attemptsMade + 1 >= maxAttempts) {
-				await this.driveFilesRepository.update(file.id, { transcodingStatus: 'failed' });
+				await this.driveFilesRepository.update({ id: file.id, transcodingStatus: 'processing' }, { transcodingStatus: 'failed' });
 				await this.publish(file, caps.vvc, startedAt, 'failed', 0, { message: (err as Error).message });
 			}
 			throw err;
@@ -299,7 +306,11 @@ export class VideoTranscodingProcessorService {
 
 	@bindThis
 	private async markSkipped(file: MiDriveFile, vvcAvailable: boolean, startedAt: number, message: string): Promise<void> {
-		await this.driveFilesRepository.update(file.id, { transcodingStatus: 'skipped' });
+		const skipped = await this.driveFilesRepository.update(
+			{ id: file.id, transcodingStatus: Or(IsNull(), In(['pending', 'processing'])) },
+			{ transcodingStatus: 'skipped' },
+		);
+		if (skipped.affected !== 1) return;
 		await this.publish(file, vvcAvailable, startedAt, 'skipped', 0, { message });
 	}
 

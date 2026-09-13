@@ -723,9 +723,14 @@ export class DriveService {
 		if (this.meta.videoTranscodeMaxDuration > 0 && (duration == null || duration > this.meta.videoTranscodeMaxDuration)) return;
 
 		// Capability(libsvtav1/HLS)が無ければ投入しない
-		this.ffmpegCapabilityService.getCapabilities().then(caps => {
+		this.ffmpegCapabilityService.getCapabilities().then(async caps => {
 			if (!caps.av1 || !caps.hls) return;
-			return this.queueService.createVideoTranscodingJob(file.id);
+			await this.queueService.createVideoTranscodingJob(file.id);
+			// The worker or a cancellation may already have advanced the queued file.
+			await this.driveFilesRepository.update(
+				{ id: file.id, transcodingStatus: IsNull() },
+				{ transcodingStatus: 'pending' },
+			);
 		}).catch(err => {
 			this.registerLogger.warn(`Failed to enqueue video transcoding job for ${file.id}`, err as Error);
 		});

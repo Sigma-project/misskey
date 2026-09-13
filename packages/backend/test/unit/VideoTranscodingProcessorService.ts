@@ -121,7 +121,8 @@ describe('video transcoding worker', () => {
 			if (phase === 'encode') throw new TranscodeCancelledError();
 			return { variants: [], hasHls: true, hasDash: false };
 		});
-		ctx.repository.update.mockResolvedValue({ affected: 0, raw: [], generatedMaps: [] });
+		ctx.repository.update.mockResolvedValueOnce({ affected: 1, raw: [], generatedMaps: [] })
+			.mockResolvedValue({ affected: 0, raw: [], generatedMaps: [] });
 		const result = ctx.service.process(ctx.job);
 		await began.promise;
 		// The API removes the snapshot while a worker publication is still pending.
