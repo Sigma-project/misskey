@@ -204,7 +204,7 @@ describe('video transcoding state transitions', () => {
 		});
 	}
 
-	for (const operation of ['cancel', 'delete'] as const) {
+	for (const operation of ['cancel', 'delete', 'completed', 'skipped'] as const) {
 		test(`a final encoder error after ${operation} clears delayed Redis progress`, async () => {
 			const target = await file();
 			const redis = app.get<Redis.Redis>(DI.redis);
@@ -237,12 +237,29 @@ describe('video transcoding state transitions', () => {
 			try {
 				await began.promise;
 				if (operation === 'cancel') await cancel(target, progress);
-				else await repository.delete(target.id);
+				else if (operation === 'delete') await repository.delete(target.id);
+				else {
+					await repository.update(target.id, { transcodingStatus: operation });
+					// A different worker has a separate process-local terminal marker.
+					const winner = new VideoTranscodingProgressService(redis, mock<GlobalEventService>());
+					await winner.publishProgress({
+						fileId: target.id, userId: target.userId, fileName: target.name,
+						phase: operation === 'completed' ? 'done' : 'skipped',
+						percent: operation === 'completed' ? 100 : 0,
+						overallPercent: operation === 'completed' ? 100 : 0,
+						startedAt: now, updatedAt: Date.now(),
+					});
+					expect(await redis.sismember('videoTranscoding:index', target.id)).toBe(0);
+				}
 				release.resolve();
 				await rejected;
+				const terminal = operation === 'completed' ? 'done' : operation === 'skipped' ? 'skipped' : 'failed';
 				expect(await redis.sismember('videoTranscoding:index', target.id)).toBe(0);
-				expect(JSON.parse((await redis.get(key))!)).toMatchObject({ phase: 'failed', message: 'cancelled or removed' });
-				expect(events.publishVideoTranscodingStream).toHaveBeenLastCalledWith('progress', expect.objectContaining({ phase: 'failed' }));
+				expect(JSON.parse((await redis.get(key))!)).toMatchObject({
+					phase: terminal, overallPercent: operation === 'completed' ? 100 : 0,
+					...(terminal === 'failed' ? { message: 'cancelled or removed' } : {}),
+				});
+				expect(events.publishVideoTranscodingStream).toHaveBeenLastCalledWith('progress', expect.objectContaining({ phase: terminal }));
 			} finally {
 				release.resolve();
 				await rejected;

@@ -215,13 +215,17 @@ export class VideoTranscodingProcessorService {
 				if (failed.affected === 1) {
 					await this.publish(file, caps.vvc, startedAt, 'failed', 0, { message: (err as Error).message });
 				} else {
-					// Raw repository queries use the primary. Cancellation/removal still
-					// needs a terminal event after any in-flight progress has settled.
+					// Raw repository queries use the primary. Reassert the actual terminal
+					// state after delayed progress, including when another worker finished.
 					const [current] = await this.driveFilesRepository.query(
 						'SELECT "transcodingStatus" FROM drive_file WHERE id = $1', [file.id],
 					) as [Pick<MiDriveFile, 'transcodingStatus'>?];
 					if (current == null || current.transcodingStatus === 'failed') {
 						await this.publish(file, caps.vvc, startedAt, 'failed', 0, { message: 'cancelled or removed' });
+					} else if (current.transcodingStatus === 'completed') {
+						await this.publish(file, caps.vvc, startedAt, 'done', 100);
+					} else if (current.transcodingStatus === 'skipped') {
+						await this.publish(file, caps.vvc, startedAt, 'skipped', 0);
 					}
 				}
 			}

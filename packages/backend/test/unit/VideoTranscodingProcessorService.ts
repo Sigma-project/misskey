@@ -60,16 +60,26 @@ function harness(useObjectStorage = false, objectStoragePrefix = 'media') {
 }
 
 describe('video transcoding worker', () => {
-	test.each([0, 1])('publishes its final encoder error only when its state transition succeeds (affected: %s)', async affected => {
+	test.each([
+		[1, 'processing', 'failed'],
+		[0, 'completed', 'done'],
+		[0, 'skipped', 'skipped'],
+		[0, 'failed', 'failed'],
+		[0, undefined, 'failed'],
+		[0, 'pending', null],
+		[0, 'processing', null],
+		[0, null, null],
+	] as const)('reconciles a final encoder error with the current state (affected: %s, state: %s)', async (affected, status, terminal) => {
 		const ctx = harness();
 		const failure = new Error('encoder failed');
 		ctx.job.attemptsMade = 2;
 		ctx.transcode.transcode.mockRejectedValue(failure);
 		ctx.repository.update.mockResolvedValueOnce({ affected: 1, raw: [], generatedMaps: [] })
 			.mockResolvedValueOnce({ affected, raw: [], generatedMaps: [] });
+		ctx.repository.query.mockResolvedValue(status === undefined ? [] : [{ transcodingStatus: status }]);
 		await expect(ctx.service.process(ctx.job)).rejects.toBe(failure);
-		const failures = ctx.progress.publishProgress.mock.calls.filter(([payload]) => payload.phase === 'failed');
-		expect(failures).toHaveLength(affected);
+		const terminalEvents = ctx.progress.publishProgress.mock.calls.filter(([payload]) => ['done', 'skipped', 'failed'].includes(payload.phase));
+		expect(terminalEvents.map(([payload]) => payload.phase)).toEqual(terminal == null ? [] : [terminal]);
 	});
 
 	test('never generates artifacts for remote files, including old queued jobs', async () => {
