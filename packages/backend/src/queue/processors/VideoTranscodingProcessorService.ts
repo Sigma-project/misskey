@@ -211,8 +211,19 @@ export class VideoTranscodingProcessorService {
 			// 最終試行で失敗した場合のみ failed を確定させる
 			const maxAttempts = job.opts.attempts ?? 1;
 			if (job.attemptsMade + 1 >= maxAttempts) {
-				await this.driveFilesRepository.update({ id: file.id, transcodingStatus: 'processing' }, { transcodingStatus: 'failed' });
-				await this.publish(file, caps.vvc, startedAt, 'failed', 0, { message: (err as Error).message });
+				const failed = await this.driveFilesRepository.update({ id: file.id, transcodingStatus: 'processing' }, { transcodingStatus: 'failed' });
+				if (failed.affected === 1) {
+					await this.publish(file, caps.vvc, startedAt, 'failed', 0, { message: (err as Error).message });
+				} else {
+					// Raw repository queries use the primary. Cancellation/removal still
+					// needs a terminal event after any in-flight progress has settled.
+					const [current] = await this.driveFilesRepository.query(
+						'SELECT "transcodingStatus" FROM drive_file WHERE id = $1', [file.id],
+					) as [Pick<MiDriveFile, 'transcodingStatus'>?];
+					if (current == null || current.transcodingStatus === 'failed') {
+						await this.publish(file, caps.vvc, startedAt, 'failed', 0, { message: 'cancelled or removed' });
+					}
+				}
 			}
 			throw err;
 		} finally {

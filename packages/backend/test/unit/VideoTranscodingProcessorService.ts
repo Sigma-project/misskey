@@ -40,6 +40,7 @@ function harness(useObjectStorage = false, objectStoragePrefix = 'media') {
 	const repository = mock<DriveFilesRepository>();
 	repository.findOneBy.mockResolvedValue(file);
 	repository.update.mockResolvedValue({ affected: 1, raw: [], generatedMaps: [] });
+	repository.query.mockResolvedValue([{ transcodingStatus: 'completed' }]);
 	const meta = mock<MetaService>();
 	meta.fetch.mockResolvedValue({ enableVideoTranscoding: true, videoTranscodeMaxFileSize: 0, videoTranscodeMaxDuration: 0, useObjectStorage, objectStoragePrefix, objectStorageBaseUrl: 'https://storage.example.com' } as MiMeta);
 	const download = mock<DownloadService>();
@@ -59,6 +60,18 @@ function harness(useObjectStorage = false, objectStoragePrefix = 'media') {
 }
 
 describe('video transcoding worker', () => {
+	test.each([0, 1])('publishes its final encoder error only when its state transition succeeds (affected: %s)', async affected => {
+		const ctx = harness();
+		const failure = new Error('encoder failed');
+		ctx.job.attemptsMade = 2;
+		ctx.transcode.transcode.mockRejectedValue(failure);
+		ctx.repository.update.mockResolvedValueOnce({ affected: 1, raw: [], generatedMaps: [] })
+			.mockResolvedValueOnce({ affected, raw: [], generatedMaps: [] });
+		await expect(ctx.service.process(ctx.job)).rejects.toBe(failure);
+		const failures = ctx.progress.publishProgress.mock.calls.filter(([payload]) => payload.phase === 'failed');
+		expect(failures).toHaveLength(affected);
+	});
+
 	test('never generates artifacts for remote files, including old queued jobs', async () => {
 		const ctx = harness();
 		ctx.repository.findOneBy.mockResolvedValue({ id: 'remote', userHost: 'remote.example', type: 'video/mp4' } as MiDriveFile);

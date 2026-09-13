@@ -27,10 +27,12 @@ import type { DownloadService } from '@/core/DownloadService.js';
 import type { InternalStorageService } from '@/core/InternalStorageService.js';
 import type { S3Service } from '@/core/S3Service.js';
 import type { VideoTranscodingService } from '@/core/VideoTranscodingService.js';
-import type { VideoTranscodingProgressService } from '@/core/VideoTranscodingProgressService.js';
+import { VideoTranscodingProgressService } from '@/core/VideoTranscodingProgressService.js';
+import type { GlobalEventService } from '@/core/GlobalEventService.js';
 import type { VideoTranscodingQueue } from '@/core/QueueModule.js';
 import type { VideoTranscodingJobData } from '@/queue/types.js';
 import type { MiLocalUser } from '@/models/User.js';
+import type * as Redis from 'ioredis';
 
 const capabilities = { av1: true, hls: true, vvc: false, opus: false, dash: true };
 const output = { variants: [], hasHls: false, hasDash: false };
@@ -77,7 +79,7 @@ describe('video transcoding state transitions', () => {
 		return repository.findOneByOrFail({ id });
 	}
 
-	function worker(target: MiDriveFile, enabled = true) {
+	function worker(target: MiDriveFile, enabled = true, progressService?: VideoTranscodingProgressService) {
 		const meta = mock<MetaService>();
 		meta.fetch.mockResolvedValue({ ...app.get<MiMeta>(DI.meta), enableVideoTranscoding: enabled });
 		const caps = mock<FFmpegCapabilityService>();
@@ -89,14 +91,14 @@ describe('video transcoding state transitions', () => {
 		progress.publishProgress.mockResolvedValue();
 		const service = new VideoTranscodingProcessorService(
 			app.get<Config>(DI.config), repository, meta, download,
-			mock<InternalStorageService>(), mock<S3Service>(), caps, transcode, progress,
+			mock<InternalStorageService>(), mock<S3Service>(), caps, transcode, progressService ?? progress,
 			new QueueLoggerService(app.get(LoggerService)),
 		);
 		const job = { data: { fileId: target.id }, opts: { attempts: 3 }, attemptsMade: 0 } as Job<VideoTranscodingJobData>;
 		return { caps, transcode, download, progress, job, run: () => service.process(job) };
 	}
 
-	async function cancel(target: MiDriveFile) {
+	async function cancel(target: MiDriveFile, progressService?: VideoTranscodingProgressService) {
 		const queue = mock<QueueService>();
 		const jobs = mock<VideoTranscodingQueue>();
 		const activeJob = mock<Job<VideoTranscodingJobData>>();
@@ -105,7 +107,7 @@ describe('video transcoding state transitions', () => {
 		queue.videoTranscodingQueue = jobs;
 		const progress = mock<VideoTranscodingProgressService>();
 		progress.remove.mockResolvedValue();
-		const endpoint = new CancelJob(repository, queue, progress);
+		const endpoint = new CancelJob(repository, queue, progressService ?? progress);
 		await endpoint.exec({ fileId: target.id }, { id: userId } as MiLocalUser, null);
 	}
 
@@ -172,7 +174,21 @@ describe('video transcoding state transitions', () => {
 		});
 	}
 
-	for (const nextState of ['processing', 'completed']) {
+	for (const enabled of [false, true]) {
+		test(`${enabled ? 'claiming' : 'skipping'} leaves unrelated pending and processing files unchanged`, async () => {
+			const target = await file();
+			const pending = await file({ transcodingStatus: 'pending' });
+			const processing = await file({ transcodingStatus: 'processing' });
+			const ctx = worker(target, enabled);
+			expect(await ctx.run()).toBe(enabled ? 'Success' : 'skip: transcoding disabled');
+			expect(await repository.findOneBy({ id: target.id })).toMatchObject({ transcodingStatus: enabled ? 'completed' : 'skipped' });
+			expect(await repository.findOneBy({ id: pending.id })).toMatchObject({ transcodingStatus: 'pending' });
+			expect(await repository.findOneBy({ id: processing.id })).toMatchObject({ transcodingStatus: 'processing' });
+			expect(ctx.progress.publishProgress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: enabled ? 'done' : 'skipped' }));
+		});
+	}
+
+	for (const nextState of ['processing', 'completed', 'skipped', 'failed', 'pending']) {
 		test(`a final attempt only marks processing failed (current state: ${nextState})`, async () => {
 			const target = await file();
 			const ctx = worker(target);
@@ -183,6 +199,55 @@ describe('video transcoding state transitions', () => {
 			});
 			await expect(ctx.run()).rejects.toThrow('encoder failed');
 			expect(await repository.findOneBy({ id: target.id })).toMatchObject({ transcodingStatus: nextState === 'processing' ? 'failed' : nextState });
+			const failures = ctx.progress.publishProgress.mock.calls.filter(([payload]) => payload.phase === 'failed');
+			expect(failures).toHaveLength(nextState === 'processing' || nextState === 'failed' ? 1 : 0);
+		});
+	}
+
+	for (const operation of ['cancel', 'delete'] as const) {
+		test(`a final encoder error after ${operation} clears delayed Redis progress`, async () => {
+			const target = await file();
+			const redis = app.get<Redis.Redis>(DI.redis);
+			const events = mock<GlobalEventService>();
+			const progress = new VideoTranscodingProgressService(redis, events);
+			const ctx = worker(target, true, progress);
+			ctx.job.attemptsMade = 2;
+			const began = Promise.withResolvers<void>();
+			const release = Promise.withResolvers<void>();
+			const key = `videoTranscoding:active:${target.id}`;
+			const originalSet = redis.set.bind(redis);
+			vi.spyOn(redis, 'set').mockImplementation(async (...args) => {
+				if (args[0] === key && JSON.parse(String(args[1])).phase === 'encoding-av1') {
+					began.resolve();
+					await release.promise;
+				}
+				return originalSet(...args);
+			});
+			const now = Date.now();
+			const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+			ctx.transcode.transcode.mockImplementation(async ({ onProgress }) => {
+				// Pass the real ProgressService throttle before delaying the Redis SET.
+				clock.mockReturnValue(now + 1100);
+				onProgress!({ codec: 'av1', phase: 'encoding-av1', percent: 50 });
+				await began.promise;
+				throw new Error('encoder crashed');
+			});
+			const running = ctx.run();
+			const rejected = expect(running).rejects.toThrow('encoder crashed');
+			try {
+				await began.promise;
+				if (operation === 'cancel') await cancel(target, progress);
+				else await repository.delete(target.id);
+				release.resolve();
+				await rejected;
+				expect(await redis.sismember('videoTranscoding:index', target.id)).toBe(0);
+				expect(JSON.parse((await redis.get(key))!)).toMatchObject({ phase: 'failed', message: 'cancelled or removed' });
+				expect(events.publishVideoTranscodingStream).toHaveBeenLastCalledWith('progress', expect.objectContaining({ phase: 'failed' }));
+			} finally {
+				release.resolve();
+				await rejected;
+				await progress.remove(target.id);
+			}
 		});
 	}
 
