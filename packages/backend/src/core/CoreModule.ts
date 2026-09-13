@@ -28,6 +28,7 @@ import { CustomEmojiService } from './CustomEmojiService.js';
 import { DeleteAccountService } from './DeleteAccountService.js';
 import { DownloadService } from './DownloadService.js';
 import { DriveService } from './DriveService.js';
+import { TranscodingCleanupService } from './TranscodingCleanupService.js';
 import { EmailService } from './EmailService.js';
 import { FederatedInstanceService } from './FederatedInstanceService.js';
 import { FetchInstanceMetadataService } from './FetchInstanceMetadataService.js';
@@ -335,6 +336,7 @@ const $ApQuestionService: Provider = { provide: 'ApQuestionService', useExisting
 		DeleteAccountService,
 		DownloadService,
 		DriveService,
+		TranscodingCleanupService,
 		EmailService,
 		FederatedInstanceService,
 		FetchInstanceMetadataService,
@@ -645,6 +647,7 @@ const $ApQuestionService: Provider = { provide: 'ApQuestionService', useExisting
 		DeleteAccountService,
 		DownloadService,
 		DriveService,
+		TranscodingCleanupService,
 		EmailService,
 		FederatedInstanceService,
 		FetchInstanceMetadataService,

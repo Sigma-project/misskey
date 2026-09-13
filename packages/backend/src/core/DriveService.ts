@@ -39,6 +39,7 @@ import InstanceChart from '@/core/chart/charts/instance.js';
 import { DownloadService } from '@/core/DownloadService.js';
 import { S3Service } from '@/core/S3Service.js';
 import { InternalStorageService } from '@/core/InternalStorageService.js';
+import { TranscodingCleanupService } from '@/core/TranscodingCleanupService.js';
 import { DriveFileEntityService } from '@/core/entities/DriveFileEntityService.js';
 import { UserEntityService } from '@/core/entities/UserEntityService.js';
 import { FileInfoService } from '@/core/FileInfoService.js';
@@ -126,6 +127,7 @@ export class DriveService {
 		private downloadService: DownloadService,
 		private internalStorageService: InternalStorageService,
 		private s3Service: S3Service,
+		private transcodingCleanupService: TranscodingCleanupService,
 		private imageProcessingService: ImageProcessingService,
 		private wasmVipsService: WasmVipsService,
 		private videoProcessingService: VideoProcessingService,
@@ -844,28 +846,6 @@ export class DriveService {
 		});
 	}
 
-	/**
-	 * トランスコード成果物（HLS/DASHのプレフィックス配下）を削除する。
-	 * 成果物の保存先は transcodingStoredInternal で記録しているため、それに従って削除する。
-	 * （オリジナルファイルの storedInternal とは独立）
-	 */
-	@bindThis
-	private async cleanupTranscodingArtifacts(file: MiDriveFile, signal?: AbortSignal): Promise<void> {
-		if (file.transcodingPrefix == null) return;
-
-		try {
-			if (file.transcodingStoredInternal) {
-				await this.internalStorageService.delPrefixAsync(file.transcodingPrefix);
-			} else {
-				// transcodingPrefix には保存時の実キー prefix（objectStoragePrefix込み）を記録しているため、
-				// 現在の objectStoragePrefix に依存せず削除できる
-				await this.s3Service.deletePrefix(this.meta, `${file.transcodingPrefix}/`, signal ?? AbortSignal.timeout(30 * 1000));
-			}
-		} catch (err) {
-			this.deleteLogger.warn(`Failed to cleanup transcoding artifacts for ${file.id}`, err as Error);
-		}
-	}
-
 	@bindThis
 	public async deleteFile(file: MiDriveFile, isExpired = false, deleter?: MiUser) {
 		if (isExpired && file.userHost != null && await hasEmojiFileReferences(this.driveFilesRepository.manager, file)) return;
@@ -944,43 +924,56 @@ export class DriveService {
 
 	@bindThis
 	private async deletePostProcess(file: MiDriveFile, isExpired = false, deleter?: MiUser) {
-		let deletedFile = file;
-		// リモートファイル期限切れ削除後は直リンクにする
-		if (isExpired && file.userHost !== null && file.uri != null) {
-			await this.cleanupTranscodingArtifacts(file);
-			const result = await this.driveFilesRepository.update({ id: file.id, isLink: false }, {
-				isLink: true,
-				isRemoteCacheExpired: true,
-				url: file.uri,
-				thumbnailUrl: null,
-				webpublicUrl: null,
-				storedInternal: false,
-				// ローカルプロキシ用
-				accessKey: randomUUID(),
-				thumbnailAccessKey: 'thumbnail-' + randomUUID(),
-				webpublicAccessKey: 'webpublic-' + randomUUID(),
-			});
-			// Only the successful transition accounts from the old cached state.
-			if (result.affected !== 1) return;
-		} else {
-			// DELETE serializes with the worker's completion UPDATE and returns its
-			// latest storage descriptor if transcoding completed after the caller read it.
-			const result = await this.driveFilesRepository.createQueryBuilder().delete()
-				.where('id = :id', { id: file.id }).returning('*').execute();
-			const removed = (result.raw as MiDriveFile[])[0];
-			if (removed == null) return;
-			deletedFile = removed;
-			// Share one deadline so reclaiming a stale variant cannot extend the API wait.
-			const cleanupSignal = AbortSignal.timeout(30 * 1000);
-			await this.cleanupTranscodingArtifacts(deletedFile, cleanupSignal);
-			// Also reclaim the caller's previous variant if a replacement completed.
-			if (file.transcodingPrefix !== deletedFile.transcodingPrefix
-				|| file.transcodingStoredInternal !== deletedFile.transcodingStoredInternal) {
-				await this.cleanupTranscodingArtifacts(file, cleanupSignal);
+		const result = await this.driveFilesRepository.manager.transaction(async manager => {
+			let deletedFile: MiDriveFile;
+			// リモートファイル期限切れ削除後は直リンクにする
+			if (isExpired && file.userHost !== null && file.uri != null) {
+				const cached = await manager.findOne(MiDriveFile, {
+					where: { id: file.id, isLink: false },
+					lock: { mode: 'pessimistic_write' },
+				});
+				if (cached == null) return null;
+				const updated = await manager.update(MiDriveFile, { id: file.id, isLink: false }, {
+					isLink: true,
+					isRemoteCacheExpired: true,
+					url: cached.uri ?? file.uri,
+					thumbnailUrl: null,
+					webpublicUrl: null,
+					storedInternal: false,
+					// ローカルプロキシ用
+					accessKey: randomUUID(),
+					thumbnailAccessKey: 'thumbnail-' + randomUUID(),
+					webpublicAccessKey: 'webpublic-' + randomUUID(),
+				});
+				// Only the successful transition accounts from the old cached state.
+				if (updated.affected !== 1) return null;
+				deletedFile = cached;
+			} else {
+				// DELETE serializes with the worker's completion UPDATE and returns its
+				// latest storage descriptor if transcoding completed after the caller read it.
+				const removed = await manager.createQueryBuilder().delete().from(MiDriveFile)
+					.where('id = :id', { id: file.id }).returning('*').execute();
+				const latest = (removed.raw as MiDriveFile[])[0];
+				if (latest == null) return null;
+				deletedFile = latest;
+			}
+			// Persist both variants before committing. A crash or partial storage failure
+			// must leave enough information for the periodic cleanup to finish the job.
+			const cleanup = await this.transcodingCleanupService.create(manager, file.id, [deletedFile, file]);
+			return { deletedFile, cleanup };
+		});
+		if (result == null) return;
+
+		if (result.cleanup != null) {
+			try {
+				await this.transcodingCleanupService.collect(result.cleanup.id);
+			} catch (err) {
+				// The deletion is committed and the cleanup descriptor remains durable.
+				this.deleteLogger.warn(`Failed to cleanup transcoding artifacts for ${file.id}`, err as Error);
 			}
 		}
 
-		await this.notifyFileDeleted(deletedFile, deleter);
+		await this.notifyFileDeleted(result.deletedFile, deleter);
 	}
 
 	@bindThis
