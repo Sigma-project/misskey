@@ -64,9 +64,10 @@ export class S3Service {
 	}
 
 	@bindThis
-	public delete(meta: MiMeta, input: DeleteObjectCommandInput) {
+	public delete(meta: MiMeta, input: DeleteObjectCommandInput, signal?: AbortSignal) {
+		signal?.throwIfAborted();
 		const client = this.getS3Client(meta);
-		return client.send(new DeleteObjectCommand(input));
+		return client.send(new DeleteObjectCommand(input), { abortSignal: signal });
 	}
 
 	/**
@@ -74,7 +75,7 @@ export class S3Service {
 	 * ListObjectsV2（最大1000件/ページ）→ DeleteObjects（最大1000件）を継続トークンでループ。
 	 */
 	@bindThis
-	public async deletePrefix(meta: MiMeta, prefix: string) {
+	public async deletePrefix(meta: MiMeta, prefix: string, signal?: AbortSignal) {
 		// 空・ルート相当のprefixはバケット全削除事故を招くため拒否する
 		if (prefix === '' || prefix === '/') {
 			throw new Error('deletePrefix refused: empty or root prefix');
@@ -85,21 +86,23 @@ export class S3Service {
 		let continuationToken: string | undefined = undefined;
 
 		do {
+			signal?.throwIfAborted();
 			const listed: ListObjectsV2CommandOutput = await client.send(new ListObjectsV2Command({
 				Bucket: bucket,
 				Prefix: prefix,
 				ContinuationToken: continuationToken,
-			}));
+			}), { abortSignal: signal });
 
 			const objects = listed.Contents ?? [];
 			if (objects.length > 0) {
+				signal?.throwIfAborted();
 				const deleted = await client.send(new DeleteObjectsCommand({
 					Bucket: bucket,
 					Delete: {
 						Objects: objects.map(o => ({ Key: o.Key })),
 						Quiet: true,
 					},
-				}));
+				}), { abortSignal: signal });
 				if (deleted.Errors?.some(error => error.Code !== 'NoSuchKey')) {
 					throw new Error(`Failed to delete transcoding objects: ${JSON.stringify(deleted.Errors)}`);
 				}

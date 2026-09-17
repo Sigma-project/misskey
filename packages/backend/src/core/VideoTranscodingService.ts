@@ -12,6 +12,7 @@ import type { Config } from '@/config.js';
 import { LoggerService } from '@/core/LoggerService.js';
 import { FFmpegCapabilityService } from '@/core/FFmpegCapabilityService.js';
 import { bindThis } from '@/decorators.js';
+import { ffprobe, type FfprobeData, type FfprobeStream } from '@/misc/ffprobe.js';
 import type Logger from '@/logger.js';
 
 export type TranscodingCodec = 'av1' | 'vvc';
@@ -389,7 +390,7 @@ export class VideoTranscodingService {
 	 * profile/level/bitdepth から妥当な近似値を構築する。VVC は近似のため DASH 専用に留める。
 	 */
 	@bindThis
-	private buildCodecString(codec: TranscodingCodec, audioCodec: 'libopus' | 'aac', videoStream: FFmpeg.FfprobeStream | undefined): string {
+	private buildCodecString(codec: TranscodingCodec, audioCodec: 'libopus' | 'aac', videoStream: FfprobeStream | undefined): string {
 		const audio = audioCodec === 'libopus' ? 'opus' : 'mp4a.40.2';
 		if (codec === 'av1') {
 			// av01.<profile>.<level><tier>.<bitdepth>
@@ -425,22 +426,8 @@ export class VideoTranscodingService {
 	}
 
 	@bindThis
-	private probe(filePath: string): Promise<FFmpeg.FfprobeData> {
-		return new Promise((resolve, reject) => {
-			let settled = false;
-			const timer = setTimeout(() => {
-				if (settled) return;
-				settled = true;
-				reject(new Error('ffprobe timed out'));
-			}, 30 * 1000);
-			FFmpeg.ffprobe(filePath, (err, metadata) => {
-				if (settled) return;
-				settled = true;
-				clearTimeout(timer);
-				if (err) reject(err);
-				else resolve(metadata);
-			});
-		});
+	private probe(filePath: string): Promise<FfprobeData> {
+		return ffprobe(filePath);
 	}
 
 	@bindThis

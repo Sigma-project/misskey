@@ -133,12 +133,39 @@ describe('CleanRemoteNoteFilesProcessorService', () => {
 		expect(drive.notifyFileDeleted).toHaveBeenCalledTimes(1);
 	});
 
+	test('storage deadline preserves retry state and releases the session lock', async () => {
+		const file = await candidate({ isLink: false, accessKey: randomUUID() });
+		drive.deleteFileStorage.mockImplementationOnce(async (_descriptor: MiDriveFile, signal: AbortSignal) => {
+			signal.throwIfAborted();
+			await new Promise<void>((_resolve, reject) => {
+				signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+			});
+		});
+		// Reserve a different PostgreSQL session before collection: advisory locks
+		// are reentrant, so reusing the collector's pooled connection could hide a leak.
+		const runner = db.createQueryRunner();
+		await runner.connect();
+		try {
+			await expect(service.collect(file.id, Date.now() + 100)).rejects.toThrow('storage deletion timed out');
+			const pending = await db.getRepository(MiRemoteFileCleanup).findOneByOrFail({ fileId: file.id });
+			expect(pending).toMatchObject({ state: 'deleting', attempts: 1, descriptor: { accessKey: file.accessKey } });
+			expect(pending.nextAttemptAt.getTime()).toBeGreaterThan(Date.now());
+			expect(drive.notifyFileDeleted).not.toHaveBeenCalled();
+			const [lock] = await runner.query('SELECT pg_try_advisory_lock(hashtextextended($1, 18)) AS locked', [file.id]);
+			expect(lock.locked).toBe(true);
+			await runner.query('SELECT pg_advisory_unlock(hashtextextended($1, 18))', [file.id]);
+		} finally { await runner.release(); }
+		await db.getRepository(MiRemoteFileCleanup).update(file.id, { nextAttemptAt: new Date(0) });
+		expect(await service.collect(file.id)).toBe('deleted');
+		expect(drive.notifyFileDeleted).toHaveBeenCalledTimes(1);
+	});
+
 	test('deleting descriptor survives another path removing the Drive row', async () => {
 		const file = await candidate({ accessKey: randomUUID() });
 		await db.getRepository(MiRemoteFileCleanup).update(file.id, { state: 'deleting', descriptor: file });
 		await db.getRepository(MiDriveFile).delete(file.id);
 		await service.collect(file.id);
-		expect(drive.deleteFileStorage).toHaveBeenCalledWith(expect.objectContaining({ accessKey: file.accessKey }));
+		expect(drive.deleteFileStorage).toHaveBeenCalledWith(expect.objectContaining({ accessKey: file.accessKey }), expect.any(AbortSignal));
 		expect(drive.notifyFileDeleted).not.toHaveBeenCalled();
 	});
 

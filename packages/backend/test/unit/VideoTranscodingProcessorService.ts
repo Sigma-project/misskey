@@ -40,6 +40,7 @@ function harness(useObjectStorage = false, objectStoragePrefix = 'media') {
 	const repository = mock<DriveFilesRepository>();
 	repository.findOneBy.mockResolvedValue(file);
 	repository.update.mockResolvedValue({ affected: 1, raw: [], generatedMaps: [] });
+	repository.query.mockResolvedValue([{ transcodingStatus: 'completed' }]);
 	const meta = mock<MetaService>();
 	meta.fetch.mockResolvedValue({ enableVideoTranscoding: true, videoTranscodeMaxFileSize: 0, videoTranscodeMaxDuration: 0, useObjectStorage, objectStoragePrefix, objectStorageBaseUrl: 'https://storage.example.com' } as MiMeta);
 	const download = mock<DownloadService>();
@@ -59,6 +60,28 @@ function harness(useObjectStorage = false, objectStoragePrefix = 'media') {
 }
 
 describe('video transcoding worker', () => {
+	test.each([
+		[1, 'processing', 'failed'],
+		[0, 'completed', 'done'],
+		[0, 'skipped', 'skipped'],
+		[0, 'failed', 'failed'],
+		[0, undefined, 'failed'],
+		[0, 'pending', null],
+		[0, 'processing', null],
+		[0, null, null],
+	] as const)('reconciles a final encoder error with the current state (affected: %s, state: %s)', async (affected, status, terminal) => {
+		const ctx = harness();
+		const failure = new Error('encoder failed');
+		ctx.job.attemptsMade = 2;
+		ctx.transcode.transcode.mockRejectedValue(failure);
+		ctx.repository.update.mockResolvedValueOnce({ affected: 1, raw: [], generatedMaps: [] })
+			.mockResolvedValueOnce({ affected, raw: [], generatedMaps: [] });
+		ctx.repository.query.mockResolvedValue(status === undefined ? [] : [{ transcodingStatus: status }]);
+		await expect(ctx.service.process(ctx.job)).rejects.toBe(failure);
+		const terminalEvents = ctx.progress.publishProgress.mock.calls.filter(([payload]) => ['done', 'skipped', 'failed'].includes(payload.phase));
+		expect(terminalEvents.map(([payload]) => payload.phase)).toEqual(terminal == null ? [] : [terminal]);
+	});
+
 	test('never generates artifacts for remote files, including old queued jobs', async () => {
 		const ctx = harness();
 		ctx.repository.findOneBy.mockResolvedValue({ id: 'remote', userHost: 'remote.example', type: 'video/mp4' } as MiDriveFile);
@@ -121,7 +144,8 @@ describe('video transcoding worker', () => {
 			if (phase === 'encode') throw new TranscodeCancelledError();
 			return { variants: [], hasHls: true, hasDash: false };
 		});
-		ctx.repository.update.mockResolvedValue({ affected: 0, raw: [], generatedMaps: [] });
+		ctx.repository.update.mockResolvedValueOnce({ affected: 1, raw: [], generatedMaps: [] })
+			.mockResolvedValue({ affected: 0, raw: [], generatedMaps: [] });
 		const result = ctx.service.process(ctx.job);
 		await began.promise;
 		// The API removes the snapshot while a worker publication is still pending.

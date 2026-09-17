@@ -20,6 +20,7 @@ import { MiDriveFile } from '@/models/DriveFile.js';
 import { IdService } from '@/core/IdService.js';
 import { isDuplicateKeyValueError } from '@/misc/is-duplicate-key-value-error.js';
 import { findReusableDriveFile } from '@/misc/find-reusable-drive-file.js';
+import { hasEmojiFileReferences } from '@/misc/has-emoji-file-references.js';
 import { FILE_TYPE_BROWSERSAFE } from '@/const.js';
 import { IdentifiableError } from '@/misc/identifiable-error.js';
 import { contentDisposition } from '@/misc/content-disposition.js';
@@ -38,6 +39,7 @@ import InstanceChart from '@/core/chart/charts/instance.js';
 import { DownloadService } from '@/core/DownloadService.js';
 import { S3Service } from '@/core/S3Service.js';
 import { InternalStorageService } from '@/core/InternalStorageService.js';
+import { TranscodingCleanupService } from '@/core/TranscodingCleanupService.js';
 import { DriveFileEntityService } from '@/core/entities/DriveFileEntityService.js';
 import { UserEntityService } from '@/core/entities/UserEntityService.js';
 import { FileInfoService } from '@/core/FileInfoService.js';
@@ -125,6 +127,7 @@ export class DriveService {
 		private downloadService: DownloadService,
 		private internalStorageService: InternalStorageService,
 		private s3Service: S3Service,
+		private transcodingCleanupService: TranscodingCleanupService,
 		private imageProcessingService: ImageProcessingService,
 		private wasmVipsService: WasmVipsService,
 		private videoProcessingService: VideoProcessingService,
@@ -213,7 +216,13 @@ export class DriveService {
 				uploads.push(this.upload(thumbnailKey, alts.thumbnail.data, alts.thumbnail.type, alts.thumbnail.ext, `${name}.thumbnail`));
 			}
 
-			await Promise.all(uploads);
+			// A failed PUT must not race cleanup with another PUT still in flight.
+			const results = await Promise.allSettled(uploads);
+			const failure = results.find(result => result.status === 'rejected');
+			if (failure) {
+				await this.cleanupFailedFileSave([key, webpublicKey, thumbnailKey], false);
+				throw failure.reason;
+			}
 			//#endregion
 
 			file.url = url;
@@ -235,19 +244,24 @@ export class DriveService {
 			const thumbnailAccessKey = 'thumbnail-' + randomUUID();
 			const webpublicAccessKey = 'webpublic-' + randomUUID();
 
-			const url = this.internalStorageService.saveFromPath(accessKey, path);
-
+			let url: string;
 			let thumbnailUrl: string | null = null;
 			let webpublicUrl: string | null = null;
 
-			if (alts.thumbnail) {
-				thumbnailUrl = this.internalStorageService.saveFromBuffer(thumbnailAccessKey, alts.thumbnail.data);
-				this.registerLogger.info(`thumbnail stored: ${thumbnailAccessKey}`);
-			}
+			try {
+				url = this.internalStorageService.saveFromPath(accessKey, path);
+				if (alts.thumbnail) {
+					thumbnailUrl = this.internalStorageService.saveFromBuffer(thumbnailAccessKey, alts.thumbnail.data);
+					this.registerLogger.info(`thumbnail stored: ${thumbnailAccessKey}`);
+				}
 
-			if (alts.webpublic) {
-				webpublicUrl = this.internalStorageService.saveFromBuffer(webpublicAccessKey, alts.webpublic.data);
-				this.registerLogger.info(`web stored: ${webpublicAccessKey}`);
+				if (alts.webpublic) {
+					webpublicUrl = this.internalStorageService.saveFromBuffer(webpublicAccessKey, alts.webpublic.data);
+					this.registerLogger.info(`web stored: ${webpublicAccessKey}`);
+				}
+			} catch (err) {
+				await this.cleanupFailedFileSave([accessKey, thumbnailAccessKey, webpublicAccessKey], true);
+				throw err;
 			}
 
 			file.storedInternal = true;
@@ -265,6 +279,30 @@ export class DriveService {
 
 			return await this.driveFilesRepository.insertOne(file);
 		}
+	}
+
+	/** Only used before the Drive row is inserted; never remove a committed file on a read failure. */
+	@bindThis
+	private async cleanupFailedFileSave(keys: (string | null)[], storedInternal: boolean): Promise<void> {
+		const signal = AbortSignal.timeout(30 * 1000);
+		await Promise.allSettled(keys.filter((key): key is string => key != null).map(async key => {
+			try {
+				if (storedInternal) {
+					await this.internalStorageService.delAsync(key);
+				} else {
+					await this.deleteObjectStorageFile(key, signal);
+				}
+			} catch (err) {
+				this.registerLogger.warn(`Failed to reclaim an incomplete upload: ${key}`, err as Error);
+				if (!storedInternal) {
+					try {
+						await this.queueService.createDeleteObjectStorageFileJob(key);
+					} catch (queueError) {
+						this.registerLogger.warn(`Failed to queue incomplete upload cleanup: ${key}`, queueError as Error);
+					}
+				}
+			}
+		}));
 	}
 
 	/**
@@ -405,12 +443,13 @@ export class DriveService {
 					if ('Bucket' in result) { // CompleteMultipartUploadCommandOutput
 						this.registerLogger.debug(`Uploaded: ${result.Bucket}/${result.Key} => ${result.Location}`);
 					} else { // AbortMultipartUploadCommandOutput
-						this.registerLogger.error(`Upload Result Aborted: key = ${key}, filename = ${filename}`);
+						throw new Error(`Upload Result Aborted: key = ${key}, filename = ${filename}`);
 					}
 				})
 			.catch(
 				err => {
 					this.registerLogger.error(`Upload Failed: key = ${key}, filename = ${filename}`, err);
+					throw err;
 				},
 			);
 	}
@@ -440,7 +479,7 @@ export class DriveService {
 		for (const fileId of exceedFileIds) {
 			const file = await this.driveFilesRepository.findOneBy({ id: fileId });
 			if (file == null) continue;
-			this.deleteFile(file, true);
+			await this.deleteFile(file, true);
 		}
 	}
 
@@ -723,9 +762,14 @@ export class DriveService {
 		if (this.meta.videoTranscodeMaxDuration > 0 && (duration == null || duration > this.meta.videoTranscodeMaxDuration)) return;
 
 		// Capability(libsvtav1/HLS)が無ければ投入しない
-		this.ffmpegCapabilityService.getCapabilities().then(caps => {
+		this.ffmpegCapabilityService.getCapabilities().then(async caps => {
 			if (!caps.av1 || !caps.hls) return;
-			return this.queueService.createVideoTranscodingJob(file.id);
+			await this.queueService.createVideoTranscodingJob(file.id);
+			// The worker or a cancellation may already have advanced the queued file.
+			await this.driveFilesRepository.update(
+				{ id: file.id, transcodingStatus: IsNull() },
+				{ transcodingStatus: 'pending' },
+			);
 		}).catch(err => {
 			this.registerLogger.warn(`Failed to enqueue video transcoding job for ${file.id}`, err as Error);
 		});
@@ -802,30 +846,10 @@ export class DriveService {
 		});
 	}
 
-	/**
-	 * トランスコード成果物（HLS/DASHのプレフィックス配下）を削除する。
-	 * 成果物の保存先は transcodingStoredInternal で記録しているため、それに従って削除する。
-	 * （オリジナルファイルの storedInternal とは独立）
-	 */
-	@bindThis
-	private async cleanupTranscodingArtifacts(file: MiDriveFile): Promise<void> {
-		if (file.transcodingPrefix == null) return;
-
-		try {
-			if (file.transcodingStoredInternal) {
-				this.internalStorageService.delPrefix(file.transcodingPrefix);
-			} else {
-				// transcodingPrefix には保存時の実キー prefix（objectStoragePrefix込み）を記録しているため、
-				// 現在の objectStoragePrefix に依存せず削除できる
-				await this.s3Service.deletePrefix(this.meta, `${file.transcodingPrefix}/`);
-			}
-		} catch (err) {
-			this.deleteLogger.warn(`Failed to cleanup transcoding artifacts for ${file.id}`, err as Error);
-		}
-	}
-
 	@bindThis
 	public async deleteFile(file: MiDriveFile, isExpired = false, deleter?: MiUser) {
+		if (isExpired && file.userHost != null && await hasEmojiFileReferences(this.driveFilesRepository.manager, file)) return;
+
 		if (file.storedInternal) {
 			this.internalStorageService.del(file.accessKey!);
 
@@ -848,13 +872,13 @@ export class DriveService {
 			}
 		}
 
-		void this.cleanupTranscodingArtifacts(file);
-
-		this.deletePostProcess(file, isExpired, deleter);
+		await this.deletePostProcess(file, isExpired, deleter);
 	}
 
 	@bindThis
 	public async deleteFileSync(file: MiDriveFile, isExpired = false, deleter?: MiUser) {
+		if (isExpired && file.userHost != null && await hasEmojiFileReferences(this.driveFilesRepository.manager, file)) return;
+
 		if (file.storedInternal) {
 			this.internalStorageService.del(file.accessKey!);
 
@@ -881,34 +905,75 @@ export class DriveService {
 			await Promise.all(promises);
 		}
 
-		await this.cleanupTranscodingArtifacts(file);
-
 		await this.deletePostProcess(file, isExpired, deleter);
+	}
+
+	/** A failed API response can follow a committed Emoji write. Preserve any referenced copy. */
+	@bindThis
+	public async deleteUnreferencedEmojiCopy(file: MiDriveFile): Promise<void> {
+		if (file.userHost != null || file.userId != null) return;
+		try {
+			if (await hasEmojiFileReferences(this.driveFilesRepository.manager, file)) return;
+			await this.deleteFileStorage(file, AbortSignal.timeout(30 * 1000));
+			await this.deletePostProcess(file);
+		} catch (err) {
+			// Unknown reference state must retain the copy; cleanup must not mask the API error.
+			this.deleteLogger.warn(`Could not reclaim unused emoji copy: ${file.id}`, err as Error);
+		}
 	}
 
 	@bindThis
 	private async deletePostProcess(file: MiDriveFile, isExpired = false, deleter?: MiUser) {
-		// リモートファイル期限切れ削除後は直リンクにする
-		if (isExpired && file.userHost !== null && file.uri != null) {
-			const result = await this.driveFilesRepository.update({ id: file.id, isLink: false }, {
-				isLink: true,
-				isRemoteCacheExpired: true,
-				url: file.uri,
-				thumbnailUrl: null,
-				webpublicUrl: null,
-				storedInternal: false,
-				// ローカルプロキシ用
-				accessKey: randomUUID(),
-				thumbnailAccessKey: 'thumbnail-' + randomUUID(),
-				webpublicAccessKey: 'webpublic-' + randomUUID(),
-			});
-			// Only the successful transition accounts from the old cached state.
-			if (result.affected !== 1) return;
-		} else {
-			await this.driveFilesRepository.delete(file.id);
+		const result = await this.driveFilesRepository.manager.transaction(async manager => {
+			let deletedFile: MiDriveFile;
+			// リモートファイル期限切れ削除後は直リンクにする
+			if (isExpired && file.userHost !== null && file.uri != null) {
+				const cached = await manager.findOne(MiDriveFile, {
+					where: { id: file.id, isLink: false },
+					lock: { mode: 'pessimistic_write' },
+				});
+				if (cached == null) return null;
+				const updated = await manager.update(MiDriveFile, { id: file.id, isLink: false }, {
+					isLink: true,
+					isRemoteCacheExpired: true,
+					url: cached.uri ?? file.uri,
+					thumbnailUrl: null,
+					webpublicUrl: null,
+					storedInternal: false,
+					// ローカルプロキシ用
+					accessKey: randomUUID(),
+					thumbnailAccessKey: 'thumbnail-' + randomUUID(),
+					webpublicAccessKey: 'webpublic-' + randomUUID(),
+				});
+				// Only the successful transition accounts from the old cached state.
+				if (updated.affected !== 1) return null;
+				deletedFile = cached;
+			} else {
+				// DELETE serializes with the worker's completion UPDATE and returns its
+				// latest storage descriptor if transcoding completed after the caller read it.
+				const removed = await manager.createQueryBuilder().delete().from(MiDriveFile)
+					.where('id = :id', { id: file.id }).returning('*').execute();
+				const latest = (removed.raw as MiDriveFile[])[0];
+				if (latest == null) return null;
+				deletedFile = latest;
+			}
+			// Persist both variants before committing. A crash or partial storage failure
+			// must leave enough information for the periodic cleanup to finish the job.
+			const cleanup = await this.transcodingCleanupService.create(manager, file.id, [deletedFile, file]);
+			return { deletedFile, cleanup };
+		});
+		if (result == null) return;
+
+		if (result.cleanup != null) {
+			try {
+				await this.transcodingCleanupService.collect(result.cleanup.id);
+			} catch (err) {
+				// The deletion is committed and the cleanup descriptor remains durable.
+				this.deleteLogger.warn(`Failed to cleanup transcoding artifacts for ${file.id}`, err as Error);
+			}
 		}
 
-		await this.notifyFileDeleted(file, deleter);
+		await this.notifyFileDeleted(result.deletedFile, deleter);
 	}
 
 	@bindThis
@@ -946,32 +1011,40 @@ export class DriveService {
 
 	/** Storage-only deletion for the durable remote-note cleanup worker. */
 	@bindThis
-	public async deleteFileStorage(file: MiDriveFile) {
+	public async deleteFileStorage(file: MiDriveFile, signal?: AbortSignal) {
+		signal?.throwIfAborted();
 		const keys = [file.accessKey, file.thumbnailAccessKey, file.webpublicAccessKey]
 			.filter((key): key is string => key != null);
 		if (file.storedInternal) {
-			for (const key of keys) await this.internalStorageService.delAsync(key);
+			for (const key of keys) {
+				signal?.throwIfAborted();
+				await this.internalStorageService.delAsync(key);
+			}
 		} else if (!file.isLink) {
-			for (const key of keys) await this.deleteObjectStorageFile(key);
+			for (const key of keys) {
+				signal?.throwIfAborted();
+				await this.deleteObjectStorageFile(key, signal);
+			}
 		}
 		if (file.transcodingPrefix != null) {
+			signal?.throwIfAborted();
 			if (file.transcodingStoredInternal) {
 				await this.internalStorageService.delPrefixAsync(file.transcodingPrefix);
 			} else {
-				await this.s3Service.deletePrefix(this.meta, `${file.transcodingPrefix}/`);
+				await this.s3Service.deletePrefix(this.meta, `${file.transcodingPrefix}/`, signal);
 			}
 		}
 	}
 
 	@bindThis
-	public async deleteObjectStorageFile(key: string) {
+	public async deleteObjectStorageFile(key: string, signal?: AbortSignal) {
 		try {
 			const param = {
 				Bucket: this.meta.objectStorageBucket,
 				Key: key,
 			} as DeleteObjectCommandInput;
 
-			await this.s3Service.delete(this.meta, param);
+			await this.s3Service.delete(this.meta, param, signal);
 		} catch (err: any) {
 			if (err.name === 'NoSuchKey') {
 				this.deleteLogger.warn(`The object storage had no such key to delete: ${key}. Skipping this.`, err as Error);

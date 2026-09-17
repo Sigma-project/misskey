@@ -39,12 +39,14 @@ export class MiEmoji {
 	@Column('varchar', {
 		length: 512,
 	})
+	@Index('IDX_EMOJI_ORIGINAL_URL')
 	public originalUrl: string;
 
 	@Column('varchar', {
 		length: 512,
 		default: '',
 	})
+	@Index('IDX_EMOJI_PUBLIC_URL')
 	public publicUrl: string;
 
 	@Column('varchar', {

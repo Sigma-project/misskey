@@ -6,7 +6,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Endpoint } from '@/server/api/endpoint-base.js';
 import { CustomEmojiService } from '@/core/CustomEmojiService.js';
-import type { DriveFilesRepository, MiEmoji } from '@/models/_.js';
+import { DriveService } from '@/core/DriveService.js';
+import { FILE_TYPE_IMAGE } from '@/const.js';
+import type { DriveFilesRepository, MiDriveFile, MiEmoji } from '@/models/_.js';
 import { DI } from '@/di-symbols.js';
 import { ApiError } from '../../../error.js';
 
@@ -85,6 +87,7 @@ export default class extends Endpoint<typeof meta, typeof paramDef> { // eslint-
 		@Inject(DI.driveFilesRepository)
 		private driveFilesRepository: DriveFilesRepository,
 
+		private driveService: DriveService,
 		private customEmojiService: CustomEmojiService,
 	) {
 		super(meta, paramDef, async (ps, me) => {
@@ -98,26 +101,43 @@ export default class extends Endpoint<typeof meta, typeof paramDef> { // eslint-
 				? { id: ps.id, name: 'name' in ps ? ps.name as string : undefined }
 				: { name: ps.name };
 
-			const error = await this.customEmojiService.update({
-				...required,
-				originalUrl: driveFile != null ? driveFile.url : undefined,
-				publicUrl: driveFile != null ? (driveFile.webpublicUrl ?? driveFile.url) : undefined,
-				fileType: driveFile != null ? (driveFile.webpublicType ?? driveFile.type) : undefined,
-				category: ps.category,
-				aliases: ps.aliases,
-				license: ps.license,
-				isSensitive: ps.isSensitive,
-				localOnly: ps.localOnly,
-				roleIdsThatCanBeUsedThisEmojiAsReaction: ps.roleIdsThatCanBeUsedThisEmojiAsReaction,
-			}, me);
+			let copy: MiDriveFile | undefined;
+			try {
+				if (driveFile?.userHost != null) {
+					if (!FILE_TYPE_IMAGE.includes(driveFile.type)) throw new ApiError();
+					try {
+						copy = await this.driveService.uploadFromUrl({ url: driveFile.url, user: null, force: true });
+					} catch {
+						throw new ApiError();
+					}
+					if (!FILE_TYPE_IMAGE.includes(copy.type)) throw new ApiError();
+					driveFile = copy;
+				}
 
-			switch (error) {
-				case null: return;
-				case 'NO_SUCH_EMOJI': throw new ApiError(meta.errors.noSuchEmoji);
-				case 'SAME_NAME_EMOJI_EXISTS': throw new ApiError(meta.errors.sameNameEmojiExists);
+				const error = await this.customEmojiService.update({
+					...required,
+					originalUrl: driveFile != null ? driveFile.url : undefined,
+					publicUrl: driveFile != null ? (driveFile.webpublicUrl ?? driveFile.url) : undefined,
+					fileType: driveFile != null ? (driveFile.webpublicType ?? driveFile.type) : undefined,
+					category: ps.category,
+					aliases: ps.aliases,
+					license: ps.license,
+					isSensitive: ps.isSensitive,
+					localOnly: ps.localOnly,
+					roleIdsThatCanBeUsedThisEmojiAsReaction: ps.roleIdsThatCanBeUsedThisEmojiAsReaction,
+				}, me);
+
+				switch (error) {
+					case null: return;
+					case 'NO_SUCH_EMOJI': throw new ApiError(meta.errors.noSuchEmoji);
+					case 'SAME_NAME_EMOJI_EXISTS': throw new ApiError(meta.errors.sameNameEmojiExists);
+				}
+				// 網羅性チェック
+				const _mustBeNever: never = error;
+			} catch (err) {
+				if (copy) await this.driveService.deleteUnreferencedEmojiCopy(copy);
+				throw err;
 			}
-			// 網羅性チェック
-			const _mustBeNever: never = error;
 		});
 	}
 }

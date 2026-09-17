@@ -6,7 +6,7 @@
 process.env.NODE_ENV = 'test';
 
 import * as assert from 'assert';
-import { describe, beforeAll, test } from 'vitest';
+import { describe, beforeAll, expect, test } from 'vitest';
 import { WebSocket } from 'ws';
 import { api, connectStream, createAppToken, initTestDb, port, post, signup, waitFire } from '../utils.js';
 import type * as misskey from 'misskey-js';
@@ -126,6 +126,85 @@ describe('Streaming', () => {
 			});
 		});
 
+		describe('Note update visibility', () => {
+			type NoteUpdate = { id: string; type: string; body: unknown };
+
+			async function subscribeToNotes(user: misskey.entities.SignupResponse | null, noteIds: string[]) {
+				const url = new URL(`ws://127.0.0.1:${port}/streaming`);
+				if (user != null) url.searchParams.set('i', user.token);
+				const socket = new WebSocket(url);
+				const events: NoteUpdate[] = [];
+				try {
+					await new Promise<void>((resolve, reject) => {
+						const timeout = setTimeout(() => reject(new Error('Note subscription did not become ready')), 10000);
+						const fail = (error: Error) => {
+							clearTimeout(timeout);
+							reject(error);
+						};
+						socket.once('error', fail);
+						socket.once('unexpected-response', () => fail(new Error('Note subscription was rejected')));
+						socket.on('message', data => {
+							const message = JSON.parse(data.toString());
+							if (message.type === 'noteUpdated') events.push(message.body);
+							if (message.type === 'connected' && message.body.id === 'ready') {
+								clearTimeout(timeout);
+								resolve();
+							}
+						});
+						socket.once('open', () => {
+							for (const id of noteIds) socket.send(JSON.stringify({ type: 'subNote', body: { id } }));
+							// Frames are processed in order: this acknowledgement follows subNote.
+							socket.send(JSON.stringify({ type: 'connect', body: { id: 'ready', channel: 'localTimeline', pong: true } }));
+						});
+					});
+					return { socket, events };
+				} catch (error) {
+					socket.terminate();
+					throw error;
+				}
+			}
+
+			test.each(['reply', 'mention', 'specified', 'public'] as const)('%s note updates reach exactly their authorized viewers', async kind => {
+				const original = kind === 'reply' ? await post(kanako, { text: 'reply target' }) : null;
+				const note = await post(kyoko, {
+					text: kind === 'mention' ? '@kanako hello' : kind === 'specified' ? '@erin hello' : 'hello',
+					visibility: kind === 'specified' ? 'specified' : kind === 'public' ? 'public' : 'followers',
+					...(kind === 'specified' ? { visibleUserIds: [kanako.id] } : {}),
+					...(original ? { replyId: original.id } : {}),
+					poll: { choices: ['yes', 'no'] },
+				});
+				const marker = await post(kyoko, { text: 'note update delivery marker' });
+				const viewers = [
+					{ user: kanako, allowed: true },
+					{ user: kyoko, allowed: true },
+					{ user: ayano, allowed: kind !== 'specified' },
+					{ user: erin, allowed: kind === 'public' },
+					{ user: null, allowed: kind === 'public' },
+				];
+				const subscriptions: (Awaited<ReturnType<typeof subscribeToNotes>> & { allowed: boolean })[] = [];
+				try {
+					for (const viewer of viewers) {
+						subscriptions.push({ ...await subscribeToNotes(viewer.user, [note.id, marker.id]), allowed: viewer.allowed });
+					}
+					assert.strictEqual((await api('notes/reactions/create', { noteId: note.id, reaction: '❤' }, kanako)).status, 204);
+					assert.strictEqual((await api('notes/reactions/delete', { noteId: note.id }, kanako)).status, 204);
+					assert.strictEqual((await api('notes/polls/vote', { noteId: note.id, choice: 0 }, kanako)).status, 204);
+					assert.strictEqual((await api('notes/delete', { noteId: note.id }, kyoko)).status, 204);
+					assert.strictEqual((await api('notes/reactions/create', { noteId: marker.id, reaction: '❤' }, kanako)).status, 204);
+					// A later public event confirms delivery for denied viewers too, without
+					// interpreting a timeout or an unready subscription as access control.
+					await expect.poll(() => subscriptions.every(({ events }) => events.some(event => event.id === marker.id && event.type === 'reacted'))).toBe(true);
+					for (const { events, allowed } of subscriptions) {
+						const updates = events.filter(event => event.id === note.id);
+						assert.deepStrictEqual(updates.map(event => event.type), allowed ? ['reacted', 'unreacted', 'pollVoted', 'deleted'] : []);
+						for (const event of updates) assert.deepStrictEqual(Object.keys(event).sort(), ['body', 'id', 'type']);
+					}
+				} finally {
+					for (const { socket } of subscriptions) socket.close();
+				}
+			});
+		});
+
 		describe('Home Timeline', () => {
 			test('自分の投稿が流れる', async () => {
 				const fired = await waitFire(
@@ -149,7 +228,7 @@ describe('Streaming', () => {
 
 			test('フォローしているユーザーの投稿が流れる', async () => {
 				const fired = await waitFire(
-					ayano, 'homeTimeline',		// ayano:home
+					ayano, 'homeTimeline',	// ayano:home
 					() => api('notes/create', { text: 'foo' }, kyoko),	// kyoko posts
 					msg => msg.type === 'note' && msg.body.userId === kyoko.id,	// wait kyoko
 				);
@@ -159,7 +238,7 @@ describe('Streaming', () => {
 
 			test('フォローしているユーザーの visibility: followers な投稿が流れる', async () => {
 				const fired = await waitFire(
-					ayano, 'homeTimeline',		// ayano:home
+					ayano, 'homeTimeline',	// ayano:home
 					() => api('notes/create', { text: 'foo', visibility: 'followers' }, kyoko),	// kyoko posts
 					msg => msg.type === 'note' && msg.body.userId === kyoko.id,	// wait kyoko
 				);
@@ -171,7 +250,7 @@ describe('Streaming', () => {
 				const note = await post(kyoko, { text: 'foo', visibility: 'followers' });
 
 				const fired = await waitFire(
-					ayano, 'homeTimeline',		// ayano:home
+					ayano, 'homeTimeline',	// ayano:home
 					() => api('notes/create', { text: 'bar', visibility: 'followers', replyId: note.id }, kyoko),	// kyoko posts
 					msg => msg.type === 'note' && msg.body.userId === kyoko.id && msg.body.replyId === note.id,
 				);
@@ -578,7 +657,7 @@ describe('Streaming', () => {
 
 			test('withReplies = falseでフォローしてる人によるリプライが流れてくる', async () => {
 				const fired = await waitFire(
-					ayano, 'globalTimeline',		// ayano:Global
+					ayano, 'globalTimeline',	// ayano:Global
 					() => api('notes/create', { text: 'foo', replyId: kanakoNote.id }, kyoko),	// kyoko posts
 					msg => msg.type === 'note' && msg.body.userId === kyoko.id,	// wait kyoko
 				);

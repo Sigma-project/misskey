@@ -214,8 +214,13 @@ export default class Connection {
 				return;
 			}
 
-			// 公開範囲がフォロワーで自分がフォロワーでない
-			if (data.body.visibility === 'followers' && !Object.hasOwn(this.following, data.body.userId)) {
+			// フォロワー限定でも、自分への返信・メンションは閲覧できる。
+			// 旧プロセスからのイベントには mentions が含まれないことがある。
+			if (data.body.visibility === 'followers' && (this.user == null || (
+				!Object.hasOwn(this.following, data.body.userId) &&
+				data.body.replyUserId !== this.user.id &&
+				!data.body.mentions?.includes(this.user.id)
+			))) {
 				return;
 			}
 		}

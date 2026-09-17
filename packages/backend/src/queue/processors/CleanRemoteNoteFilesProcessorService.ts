@@ -11,6 +11,7 @@ import { MiRemoteFileCleanup } from '@/models/RemoteFileCleanup.js';
 import type { MiMeta } from '@/models/Meta.js';
 import { DriveService } from '@/core/DriveService.js';
 import { bindThis } from '@/decorators.js';
+import { hasEmojiFileReferences } from '@/misc/has-emoji-file-references.js';
 import { QueueLoggerService } from '../QueueLoggerService.js';
 
 @Injectable()
@@ -49,7 +50,7 @@ export class CleanRemoteNoteFilesProcessorService {
 
 	/** Each file has a session lock spanning storage I/O and the two short transactions. */
 	@bindThis
-	public async collect(fileId: string): Promise<'deleted' | 'deferred' | 'skipped'> {
+	public async collect(fileId: string, deadline = Date.now() + 30 * 1000): Promise<'deleted' | 'deferred' | 'skipped'> {
 		const runner = this.db.createQueryRunner();
 		await runner.connect();
 		let locked = false;
@@ -66,6 +67,12 @@ export class CleanRemoteNoteFilesProcessorService {
 				const file = await manager.findOne(MiDriveFile, { where: { id: fileId }, lock: { mode: 'pessimistic_write' } });
 				const candidate = await manager.findOneBy(MiRemoteFileCleanup, { fileId });
 				if (!candidate || candidate.nextAttemptAt > new Date()) return null;
+				// Legacy emoji registrations store URLs rather than a Drive file ID.
+				// Keep the saved keys even when a partially completed deletion is resumed.
+				if (await hasEmojiFileReferences(manager, file, candidate.descriptor)) {
+					await this.postpone(manager, candidate, null);
+					return null;
+				}
 				if (candidate.state === 'deleting') {
 					if (!candidate.descriptor) throw new Error('Deleting candidate has no storage descriptor');
 					return candidate.descriptor;
@@ -85,7 +92,18 @@ export class CleanRemoteNoteFilesProcessorService {
 			if (!descriptor) return 'deferred';
 
 			// A crash or partial failure leaves all keys in the deleting descriptor.
-			await this.driveService.deleteFileStorage(descriptor);
+			// Abort the actual requests before releasing the session lock. A raced
+			// timeout promise would leave destructive I/O running after this job ends.
+			const controller = new AbortController();
+			const budget = Math.min(30 * 1000, deadline - Date.now());
+			const abort = () => controller.abort(new Error('Remote file storage deletion timed out'));
+			const timer = setTimeout(abort, Math.max(0, budget));
+			if (budget <= 0) abort();
+			try {
+				await this.driveService.deleteFileStorage(descriptor, controller.signal);
+			} finally {
+				clearTimeout(timer);
+			}
 			const deleted = await runner.manager.transaction(async manager => {
 				const result = await manager.createQueryBuilder().delete().from(MiDriveFile)
 					.where('id = :fileId', { fileId }).returning('*').execute();
@@ -140,7 +158,7 @@ export class CleanRemoteNoteFilesProcessorService {
 				// Preserve PostgreSQL microseconds; JS Date truncation could repeat a batch.
 				cursor = { nextAttemptAt: raw[index].cursorAttemptAt, fileId: candidate.fileId };
 				try {
-					stats[await this.collect(candidate.fileId)]++;
+					stats[await this.collect(candidate.fileId, start + 60 * 1000)]++;
 				} catch (err) {
 					stats.failed++;
 					logger.warn(`Remote file cleanup failed: ${candidate.fileId}`, err as Error);

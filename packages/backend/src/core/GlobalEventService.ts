@@ -132,6 +132,8 @@ type NoteStreamEventTypes = {
 		userId: MiNote['userId'];
 		visibility: MiNote['visibility'];
 		visibleUserIds: MiNote['visibleUserIds'];
+		replyUserId?: MiNote['replyUserId'];
+		mentions?: MiNote['mentions'];
 		body: NoteEventTypes[key];
 	};
 };
@@ -408,6 +410,8 @@ export class GlobalEventService {
 			userId: note.userId,
 			visibility: note.visibility,
 			visibleUserIds: note.visibleUserIds,
+			replyUserId: note.replyUserId,
+			mentions: note.mentions,
 			body: value,
 		});
 	}
