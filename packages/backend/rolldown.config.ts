@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'rolldown';
 import { version as summalyVersion } from '@misskey-dev/summaly';
 import type { Plugin, ExternalOption } from 'rolldown';
@@ -5,6 +7,21 @@ import { execa, execaNode } from 'execa';
 import type { ResultPromise } from 'execa';
 import fkill from 'fkill';
 import esmShim from '@rollup/plugin-esm-shim';
+
+function wasmVipsWorkerPlugin(): Plugin {
+	const path = fileURLToPath(new URL('./src/core/workers/wasm-vips.mjs', import.meta.url));
+	return {
+		name: 'wasm-vips-worker',
+		async buildStart() {
+			this.addWatchFile(path);
+			this.emitFile({
+				type: 'asset',
+				fileName: 'workers/wasm-vips.mjs',
+				source: await readFile(path, 'utf8'),
+			});
+		},
+	};
+}
 
 /**
  * Watchモード時にバックエンドの起動・停止制御を行うプラグイン
@@ -117,11 +134,14 @@ export default defineConfig((args) => {
 			tsconfig: './test-server/tsconfig.json',
 			plugins: [
 				esmShim(),
+				wasmVipsWorkerPlugin(),
 			],
 			transform: {
 				define,
 			},
 			output: {
+				// WasmVipsService resolves workers/ relative to these bundles.
+				chunkFileNames: '[name]-[hash].js',
 				keepNames: true,
 				sourcemap: true,
 				dir: './built-test',
@@ -143,12 +163,14 @@ export default defineConfig((args) => {
 			tsconfig: true,
 			plugins: [
 				esmShim(),
+				wasmVipsWorkerPlugin(),
 				(isWatchMode ? backendDevServerPlugin() : undefined),
 			],
 			transform: {
 				define,
 			},
 			output: {
+				chunkFileNames: '[name]-[hash].js',
 				keepNames: true,
 				minify: !isWatchMode,
 				sourcemap: isWatchMode,
