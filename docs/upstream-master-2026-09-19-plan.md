@@ -271,3 +271,17 @@ backend e2e 終了時の close timeout 警告は、取り込み前 master `01a30
 証拠: https://github.com/Sigma-project/misskey/actions/runs/35379372901/job/105711626106 （2026-09-18T18:28:56Z）。
 
 PR 上に review request や未対応の行コメントはない。Copilot の自動レビューは利用枠上限のため実行されなかった。これをレビュー成功とは扱わず、完了済みの Opus 5 と frontend/backend subagent のレビュー結果を記録している。CI の最終状態は PR の最新 head のチェックを参照する。
+
+## PR CI で見つかった CHANGELOG checker の修正
+
+CI が `Contains unexpected releases. base:Unreleased, head:2026.9.0` で失敗した。checker は新リリースが全てファイル先頭に追加される前提であり、fork が Unreleased を保持して直下に upstream リリースを挿入する構成を扱えなかった。
+
+採用方針: base/head の両方で先頭が Unreleased の場合だけ、リリース追加検査の比較対象から両方の先頭を除く。追加済みリリース名と順序の検査は維持し、片側だけの Unreleased を一律に除外しない。CHANGELOG を改変して検査に合わせたり、CI をスキップする方法は採用しない。
+
+検証: 既存 unit test に、複数リリースの挿入、古いリリースの順序変更拒否、Unreleased 喪失拒否を追加する。実際の master/head の CHANGELOG でも CLI 検査する。対応 workspace の test/typecheck/ESLint、変更ファイル検査を行い、Opus 5 と subagent の再レビュー後に commit/push する。
+
+検証結果: changelog-checker の全20 tests、typecheck / ESLint、実際の master と head の CHANGELOG を入力した CLI 検査がすべて成功した。subagent の静的レビューは未解決指摘なし。Opus 5 に CI 失敗ログ・差分・結果を渡して再レビューする。
+
+Opus 5 第4回で、除外後の追加領域に重複 Unreleased が残る入力が通る点を指摘された。再現可能な妥当な指摘として、先頭を除いた head に Unreleased が残る場合は拒否する検査と、連続/非連続の重複を拒否する2ケースを追加した。
+
+最終検証: 全22 tests、typecheck / ESLint、実際の master/head による CLI 再実行は成功。Opus 5 第5回と subagent の再レビューで未解決ブロッカーなし、重複 Unreleased の指摘は解消した。任意のテスト表示名改善・追加の正境界テストは機能不備ではないため今回の修正には追加しない。更新後の head で PR CI を再確認する。
