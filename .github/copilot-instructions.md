@@ -6,13 +6,16 @@
 
 このリポジトリは misskey-dev/misskey の **fork (Sigma-project/misskey)** で、メインブランチは `master`。fork 独自の不変条件として、サーバー側の画像変換は WebP ではなく **JXL** (webpublic / サムネイル / media proxy / emoji)、アニメ画像の JXL 変換は `WasmVipsService` (wasm-vips)、CI は `actions/setup-node` ではなく mise + setup-libvips 構成を使う。upstream の WebP ベースの挙動に戻す変更・`rolldown.config.ts` の external から `wasm-vips` を外す変更は regression として指摘すること。
 
+master 向け PR の CI を無効にする `pull_request.branches-ignore: [master]` を取り込まない。
+
 ## 絶対にやってはいけない事
 
 違反すると CI 失敗 / 本番事故 になる。
 
 ### コード・データ関連
 
-- **SPDX ヘッダー必須**: AGPL-3.0-only 管轄かつ SPDX CI 対象ディレクトリに新規 `.ts` / `.js` / `.cjs` / `.mjs` / `.scss` / `.vue` / `.html` ファイルを追加する場合は冒頭に必ず付ける。詳細な対象判定は `.github/workflows/check-spdx-license-id.yml` を参照。
+- **SPDX ヘッダー必須**: AGPL-3.0-only 管轄かつ SPDX CI 対象ディレクトリに新規 `.ts` / `.js` / `.cjs` / `.mjs` / `.scss` / `.vue` / `.html` ファイルを追加する場合は冒頭に必ず付ける。
+  対象判定は `scripts/check-spdx.mjs` を参照。
 
   ```text
   /*
@@ -31,6 +34,8 @@
   ```
 
   `packages/misskey-js` は MIT ライセンスのサブパッケージなので、この AGPL ヘッダーを一律に付けない (サブパッケージ固有の `package.json` / `LICENSE` / 既存ファイルのヘッダーに従う)。
+  SPDX の合否は CI と skill が同じ `scripts/check-spdx.mjs` で判定するため、code review で目視チェックを重ねない。
+  CI は `--ci` で SPDX 行の有無を検査し、既定モードは加えて `.vue` / `.html` のコメント形式を検査する。
 
 - **`locales/ja-JP.yml` / `locales/en-US.yml` 以外の locale YAML を編集しない**。fork 独自キーは `ja-JP.yml` (必須) と `en-US.yml` (推奨) の両方に追加する。それ以外の言語ファイルは upstream の Crowdin 配信物で、upstream マージ経由でのみ更新される。
 - **マージ済 migration を編集しない**。`packages/backend/migration/{timestamp}-*.js` のうち既に `develop` / `master` に入ったものは絶対に変更しない。スキーマ変更が必要なら新しい timestamp で新規ファイルを追加し、`up()` と `down()` の両方を実装する。
@@ -51,12 +56,12 @@
 
 ## 変更を出す前の最低チェック
 
-1. `pnpm lint` が通る (typecheck + eslint, 全パッケージ)
+1. `mise exec -- pnpm lint` (全パッケージ) と変更に近い test を実行する。作業中は変更ファイルの ESLint も使える。
 2. backend で `meta` / `paramDef` / `res` を変更した → `pnpm build-misskey-js-with-types` を実行し `packages/misskey-js/src/autogen/` の差分も commit に含めた
 3. entity / migration を変更した → `pnpm --filter backend check-migrations` が pending DDL 0 件で通る / 新規 migration は `up()` と `down()` 両方実装済
-4. 新規 `.ts` / `.js` / `.cjs` / `.mjs` / `.vue` / `.scss` / `.html` ファイルを追加した → SPDX ヘッダーを付けた
+4. `node scripts/check-spdx.mjs` が `SPDX: OK` を返した
 5. ユーザー影響のある変更 → `CHANGELOG.md` の `## Unreleased` 配下の該当サブセクション (`### General` / `### Client` / `### Server`) に `- <Feat|Enhance|Fix>: <概要>` を 1 行追記
-6. `locales/` を編集した場合、`git diff --name-only master -- 'locales/*.yml' | grep -vE '^locales/(ja-JP|en-US)\.yml$'` が空 (ja-JP.yml / en-US.yml 以外に差分が無い) ことを確認
+6. `node scripts/check-shipping.mjs --base master` で ja/en 以外の手動変更がないことを確認。upstream 取り込み時だけ `--upstream-ref <完全SHA>` を付け、他言語の index / worktree の内容が指定 snapshot と一致することを検査する。
 
 ## Validation コマンド
 

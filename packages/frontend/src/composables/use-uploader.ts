@@ -20,6 +20,7 @@ import { encodeToJxl, getImageDataFromCanvas } from '@/utility/jxl-encoder.js';
 import { uploadFile, UploadAbortedError } from '@/utility/drive.js';
 import type { Content } from '@/components/MkLightbox.item.vue';
 import * as os from '@/os.js';
+import { isPreviewable, getType } from '@/utility/lightbox.js';
 import { ensureSignin } from '@/i.js';
 
 export type UploaderFeatures = {
@@ -258,16 +259,16 @@ export function useUploader(options: {
 				},
 			});
 
-			if (item.file.type.startsWith('image/') || item.file.type.startsWith('video/')) {
+			if (isPreviewable(item.file.type)) {
 				menu.push({
 					text: i18n.ts.preview,
 					icon: 'ti ti-photo-search',
 					action: async () => {
 						const contents = items.value
-							.filter(item => item.file.type.startsWith('image/') || item.file.type.startsWith('video/'))
+							.filter(item => isPreviewable(item.file.type))
 							.map<Content>(item => ({
 								id: item.id,
-								type: item.file.type.startsWith('video/') ? 'video' : 'image',
+								type: getType(item.file.type),
 								url: item.objectUrl,
 								thumbnail: item.thumbnail,
 								filename: getUploadName(item),
@@ -869,7 +870,6 @@ export function useUploader(options: {
 
 			let bitrate;
 			if (item.compressionLevel === 1) {
-				// @ts-expect-error Quality constructor accepts a factor parameter internally
 				bitrate = new mediabunny.Quality(8);
 			} else if (item.compressionLevel === 2) {
 				bitrate = mediabunny.QUALITY_VERY_HIGH;

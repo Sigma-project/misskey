@@ -5,7 +5,11 @@ inputs:
   vips-version:
     description: libvips version to install
     required: false
-    default: '8.18.3'
+    default: '8.18.6'
+  vips-sha256:
+    description: SHA-256 of the selected libvips release archive
+    required: false
+    default: '3c41e1d5458081bfa4a5bc54e116c46259c75c6760a18027764555632b9dda3e'
 
 runs:
   using: composite
@@ -55,7 +59,8 @@ runs:
       shell: bash
       run: |
         cd /tmp
-        curl -sL https://github.com/libvips/libvips/releases/download/v${{ inputs.vips-version }}/vips-${{ inputs.vips-version }}.tar.xz -o vips.tar.xz
+        curl --fail --location --retry 3 https://github.com/libvips/libvips/releases/download/v${{ inputs.vips-version }}/vips-${{ inputs.vips-version }}.tar.xz -o vips.tar.xz
+        echo "${{ inputs.vips-sha256 }}  vips.tar.xz" | sha256sum --check
         tar xf vips.tar.xz
         cd vips-${{ inputs.vips-version }}
         meson setup build --prefix=/usr/local --libdir=lib --buildtype=release -Dintrospection=disabled -Djpeg-xl=enabled
