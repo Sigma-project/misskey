@@ -262,3 +262,12 @@ Opus 5 第3回は「実装レビューとして残る妥当な未解決指摘は
 e2e の終了時 close timeout 警告は exit 0 で完了した観測として残す。取り込み起因か既存かは、この段階では未分類であり、成功結果と分けて記載する。PR の CI がハング・失敗する場合は、その根拠に基づいて再検証・修正・再レビューする。
 
 PR 作成後は最新 head の CI とレビューを確認する。失敗や妥当な指摘があれば、その修正を同じレビューサイクルに戻す。
+
+## PR と既存警告の確認
+
+PR: https://github.com/Sigma-project/misskey/pull/24 （base master）。マージ本体と pnpm lockfile 生成を別コミットにした。
+
+backend e2e 終了時の close timeout 警告は、取り込み前 master `01a3091320` の成功済み CI（run 35379372901、job 105711626106）にも同じ2行が存在することを確認した。この警告は BASELINE と分類する。今回も全テスト成功・exit 0 であり、取り込み起因の新規障害ではない。
+証拠: https://github.com/Sigma-project/misskey/actions/runs/35379372901/job/105711626106 （2026-09-18T18:28:56Z）。
+
+PR 上に review request や未対応の行コメントはない。Copilot の自動レビューは利用枠上限のため実行されなかった。これをレビュー成功とは扱わず、完了済みの Opus 5 と frontend/backend subagent のレビュー結果を記録している。CI の最終状態は PR の最新 head のチェックを参照する。
