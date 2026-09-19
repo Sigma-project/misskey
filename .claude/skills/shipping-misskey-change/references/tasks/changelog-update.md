@@ -1,6 +1,6 @@
-# CHANGELOG.md の Unreleased セクションに 1 行追記する
+# CHANGELOG.md の Unreleased セクションを更新する
 
-ユーザー影響のある変更 (機能追加・修正・改善) は `CHANGELOG.md` の冒頭 `## Unreleased` セクションに 1 行追加する。リファクタリング等の内部変更は不要。
+fork ではユーザー影響のある変更を Unreleased に追記する。upstream 取り込みでは upstream の既存リリース履歴も保持する。
 
 ## セクション構造
 

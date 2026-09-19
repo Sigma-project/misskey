@@ -28,17 +28,24 @@ export class Result {
  * base側の先頭とhead側で追加された分のリリースより1つ前のバージョンが等価であるかチェックする。
  */
 export function checkNewRelease(base: Release[], head: Release[]): Result {
-	const releaseCountDiff = head.length - base.length;
+	// fork は Unreleased を維持したまま、その直下へ upstream のリリースを取り込む。
+	const keepsUnreleased = base[0]?.releaseName === 'Unreleased' && head[0]?.releaseName === 'Unreleased';
+	const baseReleases = keepsUnreleased ? base.slice(1) : base;
+	const headReleases = keepsUnreleased ? head.slice(1) : head;
+	if (keepsUnreleased && headReleases.some(release => release.releaseName === 'Unreleased')) {
+		return Result.ofFailed('Contains duplicated Unreleased sections.');
+	}
+	const releaseCountDiff = headReleases.length - baseReleases.length;
 	if (releaseCountDiff <= 0) {
 		return Result.ofFailed('Invalid release count.');
 	}
 
 	// 追加分を除いた残り (= base に既にあったリリース) が順序ごと一致することを確認する。
 	// 先頭だけ比較していると、より古いリリースが書き換えられていても素通りしてしまう
-	const existingReleases = head.slice(releaseCountDiff);
-	for (let relIdx = 0; relIdx < base.length; relIdx++) {
-		if (base[relIdx].releaseName !== existingReleases[relIdx].releaseName) {
-			return Result.ofFailed(`Contains unexpected releases. base:${base[relIdx].releaseName}, head:${existingReleases[relIdx].releaseName}`);
+	const existingReleases = headReleases.slice(releaseCountDiff);
+	for (let relIdx = 0; relIdx < baseReleases.length; relIdx++) {
+		if (baseReleases[relIdx].releaseName !== existingReleases[relIdx].releaseName) {
+			return Result.ofFailed(`Contains unexpected releases. base:${baseReleases[relIdx].releaseName}, head:${existingReleases[relIdx].releaseName}`);
 		}
 	}
 

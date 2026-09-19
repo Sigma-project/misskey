@@ -4,8 +4,8 @@
 set -eu
 
 # Keep the version aligned with .github/actions/setup-libvips/action.yml.
-vips_version=8.18.3
-vips_sha256=f41285b61bfb495605494f074ca341f7791a1d406e2f157dcea606ef1ae1b146
+vips_version=8.18.6
+vips_sha256=3c41e1d5458081bfa4a5bc54e116c46259c75c6760a18027764555632b9dda3e
 
 apt-get update
 apt-get install -y --no-install-recommends \

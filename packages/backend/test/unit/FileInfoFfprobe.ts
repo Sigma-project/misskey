@@ -6,13 +6,13 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { mock } from 'vitest-mock-extended';
 import { FileInfoService } from '@/core/FileInfoService.js';
-import type { AiService } from '@/core/AiService.js';
+import type { SensitiveMediaDetectionService } from '@/core/SensitiveMediaDetectionService.js';
 import type { LoggerService } from '@/core/LoggerService.js';
 import type Logger from '@/logger.js';
 import { ffprobe } from '@/misc/ffprobe.js';
 
 vi.mock('@/misc/ffprobe.js', () => ({ ffprobe: vi.fn() }));
-vi.mock('@/core/AiService.js', () => ({ AiService: class {} }));
+vi.mock('@/core/SensitiveMediaDetectionService.js', () => ({ SensitiveMediaDetectionService: class {} }));
 vi.mock('@/core/LoggerService.js', () => ({ LoggerService: class {} }));
 
 let service: FileInfoService;
@@ -22,7 +22,7 @@ beforeEach(() => {
 	const logger = mock<Logger>();
 	logger.createSubLogger.mockReturnValue(logger);
 	loggerService.getLogger.mockReturnValue(logger);
-	service = new FileInfoService(mock<AiService>(), loggerService);
+	service = new FileInfoService(mock<SensitiveMediaDetectionService>(), loggerService);
 });
 
 describe('FileInfoService ffprobe fallback', () => {

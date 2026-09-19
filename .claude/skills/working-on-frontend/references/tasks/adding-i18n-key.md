@@ -1,12 +1,14 @@
 # i18n キーを追加・改修する
 
-UI 文言の追加・変更を行う際の手順。**手動編集して良いのは `locales/ja-JP.yml` のみ**。
+UI 文言の追加・変更を行う際の手順。**手動編集して良いのは `locales/ja-JP.yml` と `locales/en-US.yml`**。
 
 ## 大前提 (絶対 NG)
 
-- **`locales/<lang>.yml` (ja-JP.yml 以外) の編集は禁止**。これらは Crowdin の自動配信先で、手動編集すると次の同期で上書き喪失する ([locales/README.md](../../../../../locales/README.md), [crowdin.yml](../../../../../crowdin.yml))
+- **`locales/<lang>.yml` (ja-JP.yml / en-US.yml 以外) の手動編集は禁止**。これらは Crowdin の自動配信先で、手動編集すると次の同期で上書き喪失する ([locales/README.md](../../../../../locales/README.md), [crowdin.yml](../../../../../crowdin.yml))
 - 文字列リテラルを SFC に直書きしない (`<span>こんにちは</span>` 等)。必ず `i18n.ts.<key>` を経由する
 - 既存キーの破壊的リネームは Crowdin 翻訳資産を失わせる。**追加 → 移行 → 旧キー削除** の 3 段階に分割する。詳細手順と誤編集の復旧は [knowledge/i18n-usage.md §Crowdin 安全策](../knowledge/i18n-usage.md)
+
+fork 独自キーは ja-JP に必須、en-US にも追加を推奨する。他言語の upstream 取り込みは shipping script の `--upstream-ref <完全SHA>` で検証する。
 
 ## ステップ 1: ja-JP.yml にキーを追加
 
@@ -83,12 +85,10 @@ pnpm --filter i18n lint
 pnpm --filter frontend lint
 
 # 他言語 yml に diff が出ていないことを確認 (出力が空であれば OK)
-git diff --name-only develop -- 'locales/*.yml' | grep -v '^locales/ja-JP\.yml$'
+git diff --name-only master -- 'locales/*.yml' | grep -vE '^locales/(ja-JP|en-US)\.yml$'
 ```
 
 **注意:** `grep -v 'ja-JP.yml'` を **diff 本文** に当てると ja-JP.yml 単体の変更でも `+追加行` が素通りして必ず非空になる。`--name-only` でファイル名だけに絞ってから完全一致で除外するのが正しい。
-
-ユーザー影響のある UI 変更を伴う場合は [shipping-misskey-change スキル](../../../shipping-misskey-change/SKILL.md) で CHANGELOG エントリの判定をする。
 
 ## 例: 「ノートを削除しますか？」確認ダイアログを追加する
 

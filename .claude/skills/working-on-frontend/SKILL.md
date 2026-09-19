@@ -36,6 +36,6 @@ SKILL.md 本体は references への索引だけ。具体的な手順や規約�
 
 ## 必ず最後に通る場所
 
-frontend の変更を commit / PR にする前に、必ず [shipping-misskey-change](../shipping-misskey-change/SKILL.md) の最終チェックリストに従う。`pnpm lint` / SPDX / `ja-JP.yml` のみ編集確認 / CHANGELOG をまとめて確認する。
+frontend の変更を commit / PR にする前に、必ず [shipping-misskey-change](../shipping-misskey-change/SKILL.md) の最終チェックリストに従う。
 
-`.vue` を追加・変更したなら、その出口で [vue-component-reviewer](../../agents/vue-component-reviewer.md) agent (この skill の規約を review-mode から機械チェックする専門 reviewer) を Task で起動すると、SPDX 形式・命名・i18n・SCSS 変数・a11y・Storybook 併設の逸脱を取りこぼしにくい。
+`.vue` を追加・変更したなら、その出口で [vue-component-reviewer](../../agents/vue-component-reviewer.md) agent (この skill の規約を review-mode から機械チェックする専門 reviewer) を Task で起動すると、命名・i18n・SCSS 変数・a11y・Storybook 併設の逸脱を取りこぼしにくい。

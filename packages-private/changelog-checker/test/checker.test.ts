@@ -8,6 +8,40 @@ import { Release, ReleaseCategory } from '../src/parser.js';
 import { checkNewRelease, checkNewTopic } from '../src/checker.js';
 
 describe('checkNewRelease', () => {
+	test.each([
+		['Unreleased', 'Unreleased', '2026.9.0', '2026.7.0'],
+		['Unreleased', '2026.9.0', 'Unreleased', '2026.7.0'],
+	])('Unreleasedが重複した履歴を拒否する: %j', (...names) => {
+		const base = [new Release('Unreleased'), new Release('2026.7.0')];
+		const head = names.map(name => new Release(name));
+
+		expect(checkNewRelease(base, head).success).toBe(false);
+	});
+
+	test('Unreleasedを保持したまま複数のupstreamリリースを追加できる', () => {
+		const base = [new Release('Unreleased'), new Release('2026.7.0')];
+		const head = [
+			new Release('Unreleased', [new ReleaseCategory('General', ['upstreamを取り込み'])]),
+			new Release('2026.9.0'), new Release('2026.8.0'), new Release('2026.7.0'),
+		];
+
+		expect(checkNewRelease(base, head).success).toBe(true);
+	});
+
+	test('Unreleasedがあっても既存リリースの順序変更を拒否する', () => {
+		const base = [new Release('Unreleased'), new Release('2026.7.0'), new Release('2026.6.0')];
+		const head = [new Release('Unreleased'), new Release('2026.9.0'), new Release('2026.6.0'), new Release('2026.7.0')];
+
+		expect(checkNewRelease(base, head).success).toBe(false);
+	});
+
+	test('リリース追加時に既存のUnreleasedが失われた場合は拒否する', () => {
+		const base = [new Release('Unreleased'), new Release('2026.7.0')];
+		const head = [new Release('2026.9.0'), new Release('2026.8.0'), new Release('2026.7.0')];
+
+		expect(checkNewRelease(base, head).success).toBe(false);
+	});
+
 	test('headに新しいリリースがある1', () => {
 		const base = [new Release('2024.12.0')];
 		const head = [new Release('2024.12.1'), new Release('2024.12.0')];

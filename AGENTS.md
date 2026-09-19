@@ -24,8 +24,9 @@
 
 1. **SPDX ヘッダー欠落のまま AGPL 管轄ディレクトリへ新規ファイルを追加しない**
    - 対象: 新規 `.ts` / `.js` / `.cjs` / `.mjs` / `.vue` / `.scss` / `.html` ファイル
-   - CI の対象判定は [.github/workflows/check-spdx-license-id.yml](.github/workflows/check-spdx-license-id.yml) の `directories` 配列を参照 (`*.config.{ts,js,cjs,mjs}` と `*eslint*` は除外)
-   - 欠落すると CI (`spdx` ジョブ) が失敗する
+   - 対象と判定は [scripts/check-spdx.mjs](scripts/check-spdx.mjs) が一元管理する
+   - `node scripts/check-spdx.mjs` を 1 回実行し、欠落は `--fix` で補う。
+     `SPDX: OK` なら追加の目視確認はしない
    - `packages/misskey-js` は MIT ライセンスのサブパッケージなので、この AGPL ヘッダーを一律に付けない (サブパッケージ固有の `package.json` / `LICENSE` / 既存ファイルのヘッダーに従う)
 
    `.ts` / `.js` / `.cjs` / `.mjs` / `.scss`:
@@ -60,7 +61,7 @@
 ### Git / リポジトリ操作
 
 4. **`git push --force` / `--force-with-lease` を `main` / `develop` / `master` にしない** (他人の作業を消す可能性)
-5. **`git commit --no-verify` で hook をスキップしない** (lint / format / SPDX チェックを潰す)
+5. **`git commit --no-verify` で hook をスキップしない**
 6. **マージ済 / プッシュ済コミットを `git commit --amend` で書き換えない** (履歴の整合性が壊れる)
 7. **他人のブランチを `git reset --hard` / `git branch -D` で破壊しない**
 8. **`git config` をユーザーに無断で書き換えない** (特に `user.name` / `user.email` / `commit.gpgsign`)
@@ -92,6 +93,7 @@
 - **サーバー側の画像変換はすべて JXL**。webpublic (`DriveService.generateAlts`、ロスレス・上限 11648px)、サムネイル、media proxy (`static.jxl` / `svg.jxl` / `emoji.jxl`)、`/emoji/*.jxl` ルート。upstream の WebP (`convertSharpToWebp` 系 / `webpDefault`) に戻さない・復活させない
 - **アニメ画像 (GIF / APNG / アニメ WebP 等) の JXL 変換は [WasmVipsService](packages/backend/src/core/WasmVipsService.ts)** (wasm-vips) が担う。sharp はアニメ JXL 出力に使えない
 - **`packages/backend/rolldown.config.ts` の `external` から `wasm-vips` を外さない**。バンドルされると `vips.wasm` 等の WASM アセットが `built/` に出力されず、実行時 ENOENT でアニメ JXL 変換が全滅する
+- **sharp の更新時は `pnpm-workspace.yaml` の `packageExtensions` の対象バージョンも更新する**。source build 用の node-addon-api / node-gyp を維持する。
 - **sharp は JXL 有効のグローバル libvips に対するソースビルド前提**。ローカルは [mise.toml](mise.toml) の `SHARP_FORCE_GLOBAL_LIBVIPS=1` / `npm_config_build_from_source=true`、CI は [.github/actions/setup-libvips](.github/actions/setup-libvips) (libvips を `-Djpeg-xl=enabled` でビルド)。prebuilt sharp は JXL エンコード不可 (`jxlsave_buffer` が無い) なので、ローカルで JXL 系テストが 500/失敗するときはまず環境を疑う
 - **クライアント圧縮は JXL 多段パイプライン** ([use-uploader.ts](packages/frontend/src/composables/use-uploader.ts)): Canvas JXL → WASM JXL (`@jsquash/jxl`) → AVIF/WebP フォールバック。圧縮レベルは 0–4 の 5 段階
 - **フロントは常に元のファイル名でアップロードする** (`item.suffix` に変換後拡張子を入れない)。拡張子の補正は backend の [correctFilename](packages/backend/src/misc/correct-filename.ts) が実際の Content-Type に基づいて行う (二重拡張子防止。根拠: コミット `03a456bd7b`)
@@ -101,6 +103,7 @@
 
 - **Node・ツールは mise 管理** ([mise.toml](mise.toml))。ローカル検証は `mise exec -- pnpm ...` または mise タスク (`mise run build`、`mise run ci:lint` 等) で行う
 - **CI workflow は `actions/setup-node` ではなく `jdx/mise-action` + `./.github/actions/setup-libvips`** を使う。upstream マージで workflow が conflict したら「upstream のバージョン更新を採用し、setup-node ブロックを libvips+mise に置換し直す」
+- **master 向け PR の CI を無効化しない**。upstream の release PR 向け `pull_request.branches-ignore: [master]` は fork に適用しない
 - **テスト用 DB / Redis はルートの [compose.test.yml](compose.test.yml)** (`docker compose -f compose.test.yml up -d --wait`、port 54312 / 56312)
 
 ---
@@ -109,12 +112,12 @@
 
 各エージェントは [shipping-misskey-change スキル](.claude/skills/shipping-misskey-change/SKILL.md) を参照すること。スキルが利用できない環境でも、以下のチェックは必ず実施すること:
 
-1. **lint**: `pnpm lint` が通る (typecheck + eslint, 全パッケージ)
+1. **lint / test**: `mise exec -- pnpm lint` (typecheck + ESLint、全パッケージ) と変更に近い test を実行する。作業中の高速な検証には変更ファイルへの ESLint も使える。
 2. **backend API 変更時**: `pnpm build-misskey-js-with-types` を実行し `packages/misskey-js/src/autogen/` の差分も commit に含めた
 3. **entity / migration 変更時**: `pnpm --filter backend check-migrations` が pending DDL 0 件で通る / 新規 migration は `up()` と `down()` 両方実装済
-4. **新規ファイル**: SPDX ヘッダーを付けた (`.vue` / `.html` は HTML コメント形式、それ以外は TS コメント形式)
+4. **SPDX**: `node scripts/check-spdx.mjs` が `SPDX: OK` を返すことを確認する
 5. **ユーザー影響のある変更**: `CHANGELOG.md` の `## Unreleased` 配下の該当サブセクション (`### General` / `### Client` / `### Server`) に `- <Feat|Enhance|Fix>: <概要>` を 1 行追記
-6. **locale safety**: `locales/` を編集した場合、`git diff --name-only master -- 'locales/*.yml' | grep -vE '^locales/(ja-JP|en-US)\.yml$'` が空 (ja-JP.yml / en-US.yml 以外に差分が無い) ことを確認
+6. **locale safety**: `node scripts/check-shipping.mjs --base master` で ja/en 以外の手動変更がないことを確認する。upstream 取り込みでは `--upstream-ref <取り込んだ完全SHA>` を付け、他言語の内容がその snapshot と一致することを検査する (index / worktree / untracked も対象)。
 
 ### Validation commands
 
@@ -138,5 +141,5 @@ fork では Node / pnpm を mise が管理しているため、シェルに mise
 **注意:**
 
 - backend テスト (`test` / `test:e2e` / `test:fed`) と `check-migrations` の実行前に、`.config/test.yml` (`cp .github/misskey/test.yml .config/test.yml`) と テスト用 DB (`docker compose -f compose.test.yml up -d --wait`) が必要
-- `pnpm lint` のうち frontend-builder の typecheck は `@oxc-project/types` の二重バージョンにより **upstream 由来で失敗する** (upstream CI は frontend-builder を typecheck しない)。この失敗は fork の変更起因ではないので、他の workspace が通っていれば lint 通過とみなしてよい
+- frontend-builder の旧 `@oxc-project/types` 重複による typecheck 失敗は、2026.9.0 取り込み時の検証では解消している。今後の失敗を既知の例外として扱わず、原因を確認する。
 - ローカル sharp が JXL 非対応 (prebuilt) の場合、JXL 変換を伴うテストが失敗する。コード起因かを切り分けてから対応すること (「Fork 固有の不変条件」参照)
